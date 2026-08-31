@@ -34,6 +34,8 @@ The priority order is the user's latest explicit instruction, `requirements.md`,
 ## Work selection and progress
 
 - Identify the `task.md` task ID and lane before changing files. Treat listed predecessors as integration/acceptance dependencies unless a missing concrete artifact or decision makes them a hard start dependency; T11 remains the early measurement M0 decision gate.
+- Freeze the work unit to the task IDs, lane, files, and deliverables explicitly named in the initial user request or subagent assignment. `task.md`, its unchecked items, dependencies, adjacent code, available worker slots, and discovered follow-ups do not expand that scope.
+- After the initially assigned scope is committed and reported, stop. Do not select the next checklist item, refill the same worker with another task, or continue toward repository-wide completion unless the initial request explicitly assigned that broader range. A parent may dispatch only task IDs inside its own fixed initial scope, and each child ends after its bounded assignment.
 - Never use an unchecked predecessor by itself as a reason to wait. Start separable fixture/mock work when the required versioned contract, protocol, finite type, fixture, golden payload, fake, expected image, or approved technical decision is stable. Record the specific missing artifact and release condition when work truly cannot start.
 - At slice start, record the task/lane, referenced artifact and version, owned files, tests to author for deferred verification, and unresolved integration, live, device, and acceptance gates so another worker can safely build on the result.
 - Keep a change to one task ID and one lane when practical. Agree on protocols and schemas before crossing lane boundaries.
@@ -41,7 +43,7 @@ The priority order is the user's latest explicit instruction, `requirements.md`,
 - Track work as `planned`, `in_progress`, `code_ready_unverified`, `implementation_ready`, `integration_ready`, `accepted`, or `blocked`. `code_ready_unverified` means committed code and authored but unexecuted tests only. Treat `[ ]` as any state except `accepted`; it is not a start gate. Change it to `[x]` only after every listed completion condition, automated test, fixture/live check, and required physical-device check passes.
 - A source-Web completion, Simulator pass, mock Room, fake camera, or fixture pass does not satisfy a required Swift live or physical-device gate.
 - If an external backend, credential, or device is unavailable, continue any separable fixture/mock implementation, leave integration/acceptance unchecked, and record the blocker, owner, and release condition. An unavailable required contract or unresolved product meaning can block the dependent implementation; do not fabricate either one.
-- When multiple lanes can proceed independently and delegation is available and authorized, keep non-conflicting lanes active with bounded tasks. Prefer one task ID and lane per worker in a dedicated branch/worktree; do not let parallel workers edit the same shared file or `task.md`.
+- When multiple lanes inside the fixed initial assignment can proceed independently and delegation is available and authorized, keep those non-conflicting lanes active with bounded tasks. Prefer one task ID and lane per worker in a dedicated branch/worktree; do not let parallel workers edit the same shared file or `task.md`. Do not use an idle slot as authorization to add an unassigned task.
 
 ## Implementation rules
 

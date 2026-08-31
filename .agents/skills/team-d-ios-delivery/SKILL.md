@@ -19,6 +19,17 @@ If the request would change user-visible behavior, API semantics, persistence, p
 
 Block the start of dependent implementation only for a concrete missing artifact or decision: unresolved wire or product meaning, unavailable shared protocol/schema, an active owner on the same file, or an unapproved irreversible technology gate. Device, credential, shared-backend, and live-environment availability normally block integration or acceptance, not fixture/mock implementation.
 
+## Freeze the assignment boundary
+
+The task IDs, lane, files, and deliverables explicitly named in the initial user request or subagent assignment are the worker's complete and immutable scope for that work unit.
+
+- Record the exact assignment boundary before editing. `task.md`, unchecked tasks, dependencies, available worker slots, nearby code, and discovered follow-up work are context, not authorization to expand the boundary.
+- A request to implement one task, one slice, or an enumerated set ends when that exact scope is committed and reported. Do not select the next task, continue down the checklist, refill the worker with another task, or interpret “make progress,” “parallelize,” or “finish your assignment” as permission to widen it.
+- A parent may dispatch only task IDs that were explicitly included in the parent's own initial assignment. Each child receives a bounded assignment and terminates after returning its candidate commit; do not reuse the completed child with `followup_task` for a new task.
+- If the initial request explicitly assigns the entire `task.md`, the whole file is in scope. Otherwise never infer repository-wide completion from access to the file or from a parent role.
+- New work requires a new explicit user instruction or a new parent assignment that is already inside the parent's fixed initial boundary. Record out-of-scope dependencies and follow-ups, then stop instead of implementing them.
+- The parent ends its turn after every task in its initial boundary has been committed or objectively blocked and all already-running children in that boundary have reported. Do not automatically begin final verification unless it was also part of the initial assignment.
+
 ## Respect independent AI task boundaries
 
 Treat every other Codex task, thread, chat, or session as an autonomous user-owned workflow, not as a child agent of the current task. This applies even when it uses the same repository, checkout, branch, task list, or product goal.
@@ -42,8 +53,8 @@ When the user asks this task to use subagents or parallelize delivery, use a sha
 - Children must not edit `task.md`, shared project files, package locks, shared schemas, or root navigation unless the parent explicitly assigns that ownership. They return the candidate SHA, changed files, tests authored but not run, and remaining integration/live/device gates.
 - During the implementation phase, children do not run `swift build`, `swift test`, `xcodebuild`, XCUITest, app launch, clean build, or any command that compiles or links the product. They may run source-only formatting, schema/document lint, `git diff --check`, and secret/static scans that create no build artifacts.
 - During Phase 1, do not reserve a child as a standing reviewer. The parent checks ownership, scope, and obvious `P0` risks only; defer the full integrated review to the Phase 2 verification owner. `P1` through `P3` do not consume another child pass.
-- When a child reaches `code_ready_unverified`, end that child work unit and immediately reuse the slot for the next non-conflicting local task. Device, live, credential, physical-corpus, and acceptance gates remain recorded without occupying an implementation slot.
-- Integrate candidate commits continuously without running builds. After every non-blocked local implementation task is `code_ready_unverified`, stop implementation fan-out and start the dedicated final verification phase.
+- When a child reaches `code_ready_unverified`, end that child work unit. Do not reuse it for another task. Device, live, credential, physical-corpus, and acceptance gates remain recorded without extending the assignment.
+- Integrate candidate commits without running builds only when integration is inside the parent's fixed assignment. After every task in that boundary is committed or blocked, stop; begin the dedicated final verification phase only under a separate explicit assignment or when the initial request included it.
 - In final verification, assign one direct child as the exclusive verification-and-fix owner of one clean integrated worktree. Prefer `gpt-5.6-sol` with `high` reasoning when available. Other children must not write to that worktree; they may perform bounded read-only diagnosis only when the verification owner requests a specific failure analysis.
 
 ## Implement within the lane

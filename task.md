@@ -85,7 +85,8 @@
 | `blocked` | 欠けている具体的成果物、owner、解除条件を記録済み | `[ ]` |
 
 - Phase 1は実装専用とする。各並列sliceはtask ID・lane・参照artifact/version・所有file・最終検証で実行すべきtest・未統合gateを明示し、production変更とテストコードを1〜2個の意味あるcommit（必要時のみ最大3個）にまとめる。workerは`swift build`、`swift test`、`xcodebuild`、XCUITest、app起動、clean buildなどcompile/linkを伴うcommandを実行せず、build artifactを生成しない。source-only lint、schema/doc検証、secret scan、`git diff --check`だけは許可する。
-- 子workerは候補SHA、変更file、書いたが未実行のtest、残るgateを返して`code_ready_unverified`で終了する。`task.md`や共有project fileは更新せず、親AIがcommit済み候補をbuildなしで統合して次の競合しないtaskを継続的に割り当てる。`code_ready_unverified`をbuild済み・test済み・動作済みと表現してはならない。
+- 各workerの担当境界は、最初のuser requestまたはspawn時に明示されたtask ID・lane・file・deliverableだけに固定する。`task.md`の未完了項目、依存、隣接code、空きworker枠、発見したfollow-upは担当拡張の許可ではない。最初に列挙された範囲をcommitして報告したら終了し、次のtaskを選ばず、同じworkerへ再割当しない。親AIも自分の最初の担当範囲内だけを委譲し、その全件がcommitまたは具体的blockedになった時点で終了する。`task.md`全体が担当なのは最初の依頼が明示的にそう指定した場合だけとする。
+- 子workerは候補SHA、変更file、書いたが未実行のtest、残るgateを返して`code_ready_unverified`で終了する。`task.md`や共有project fileは更新せず、親AIは自分の固定担当範囲に含まれる場合だけcommit済み候補をbuildなしで統合する。`code_ready_unverified`をbuild済み・test済み・動作済みと表現してはならない。
 - Phase 2は、外部要因でblockedなものを除く全ローカル実装が`code_ready_unverified`になった後にだけ開始する。1つのcleanな統合worktree、1つの再利用可能なscratch/DerivedData root、1人のbuild検証・修正ownerを使い、他workerは同じworktreeを編集しない。
 - 検証ownerは統合diff全体をreviewし、package/app compile、focused/full test、contract/fixture test、app integration build、XCUITest、指定されたclean clone・性能・実機・live gateの順に検証する。compiler/linker error、必須test failure、必須受け入れ条件違反だけを`P0`として修正し、変更後にだけ再実行する。`P1`〜`P3`は小課題として記録するだけでPhase 2を延長しない。
 - 最終統合SHA、Xcode/Swift/依存version、commandと結果、fixture/live/device証跡、残る外部gateを記録してから、各taskを`implementation_ready`、`integration_ready`、または`accepted`へ進める。`[x]`は従来どおり全完了条件と必要証跡が揃った場合だけとする。記録後に再生成可能なscratch/DerivedData/test resultを削除する。
@@ -773,7 +774,7 @@ T01 棚卸し
 
 ## 並行実行可能なまとまり
 
-- 親AIは各レーンのactive ownerと共有file ownershipを確認し、利用可能なworker枠へ成果物readyなbounded taskを継続的に割り当てる。未受け入れの先行タスクがあっても、必要artifactが揃いfile競合がなければ`implementation_ready`まで進める。
+- 親AIは最初に明示された自分の担当範囲内だけで、各レーンのactive ownerと共有file ownershipを確認し、成果物readyなbounded taskをworkerへ割り当てる。空き枠やworker完了を理由に担当範囲外のtaskを追加せず、各workerは割り当て分を`code_ready_unverified`としてcommit・報告したら終了する。親AIも最初の担当範囲が全件commitまたは具体的blockedになった時点で終了する。
 - T02のpackage/target境界とfixture build基盤が利用可能になったら、T11の採寸PoCを開始する。同時にレーンA/CのT03契約、レーンFのfixture provenance作業を並行できる。有限状態とevent contractが安定した時点でT04、capture session protocolの所有境界が合意できた時点でT05基盤も並行する。
 - capture frame/photo protocolとfake cameraが利用可能になったら、T05の実機受け入れを待たず、T06のガイド/UI、T07のローカル品質、T08-01のLiveKit camera spikeを別packageで並行できる。
 - version付きHTTP schemaとgolden payloadが確定したら、live endpointの提供を待たず、T09撮影後判定client、T12-02測定点client、T14 mask/background clientをレーンC内で担当分割できる。ただし実際の呼出gateはT10/T13完了まで開けず、live受け入れは共有backend提供後に行う。

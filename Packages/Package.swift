@@ -64,5 +64,9 @@ let package = Package(
                 .copy("Resources/Golden"),
             ]
         ),
+        .testTarget(
+            name: "DomainKitTests",
+            dependencies: ["DomainKit"]
+        ),
     ]
 )

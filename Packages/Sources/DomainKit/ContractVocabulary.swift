@@ -2,14 +2,14 @@ public enum DomainValidationError: Error, Equatable, Sendable {
     case invalidValue(String)
 }
 
-public enum Shot: String, CaseIterable, Sendable {
+public enum Shot: String, CaseIterable, Hashable, Sendable {
     case front
     case back
     case tag
     case measurement
 }
 
-public enum AssessableShot: String, CaseIterable, Sendable {
+public enum AssessableShot: String, CaseIterable, Hashable, Sendable {
     case front
     case back
     case tag

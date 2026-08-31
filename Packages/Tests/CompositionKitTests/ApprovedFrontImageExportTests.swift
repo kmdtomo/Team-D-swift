@@ -188,7 +188,7 @@ struct ApprovedFrontImageExportTests {
         #expect(await cleaner.count == 1)
     }
 
-    @Test func providerFailureIsRetryableAndFinalizingBlocksCancelAndSecondSave() async {
+    @Test func providerFailureIsRetryableAndCleanupPendingBlocksCancelAndSecondSave() async {
         let failingBytes = SequencedBytesProvider(results: [.failure(.bytes), .success(.init(data: tinyPNG, format: .png))])
         let sink = RecordingSink(result: .completed)
         let retryCleaner = RecordingCleaner()
@@ -202,19 +202,91 @@ struct ApprovedFrontImageExportTests {
         #expect(await retryCleaner.count == 1)
 
         let bytes = StaticBytesProvider(values: ["front": .success(.init(data: tinyPNG, format: .png))])
-        let finalizingCleaner = ControlledCleaner()
-        let exporter = makeExporter(bytes: bytes, sink: sink, cleaner: finalizingCleaner, originalID: "front")
+        let pendingCleaner = ControlledCleaner()
+        let exporter = makeExporter(bytes: bytes, sink: sink, cleaner: pendingCleaner, originalID: "front")
         let request = await exporter.requestExport(approvedComparison: state)
         let requestID = try! #require(request.requestID)
-        await finalizingCleaner.waitUntilStarted()
-        #expect(await exporter.status == .finalizing(requestID: requestID))
+        await pendingCleaner.waitUntilStarted()
+        #expect(await exporter.status == .cleanupPending(requestID: requestID))
         await exporter.cancelExport()
-        #expect(await exporter.status == .finalizing(requestID: requestID))
-        #expect(await exporter.requestExport(approvedComparison: state) == .finalizing(requestID: requestID))
-        await finalizingCleaner.finish()
+        #expect(await exporter.status == .cleanupPending(requestID: requestID))
+        #expect(await exporter.requestExport(approvedComparison: state) == .cleanupPending(requestID: requestID))
+        await pendingCleaner.finish()
         #expect(await exporter.waitForTerminalStatus(of: requestID) == .completed(requestID: requestID))
         #expect(await exporter.requestExport(approvedComparison: state) == .alreadyCompleted(requestID: requestID))
-        #expect(await finalizingCleaner.count == 1)
+        #expect(await pendingCleaner.count == 1)
+    }
+
+    @Test func cleanupFailureRetriesCleanupWithoutWritingApprovedImageAgain() async {
+        let bytes = StaticBytesProvider(values: ["front": .success(.init(data: tinyPNG, format: .png))])
+        let sink = RecordingSink(result: .completed)
+        let cleaner = SequencedCleaner(results: [.failure(.cleanup), .success(())])
+        let exporter = makeExporter(bytes: bytes, sink: sink, cleaner: cleaner, originalID: "front")
+        let state = approvedState(originalID: "front", choice: .original)
+
+        let first = await exporter.requestExport(approvedComparison: state)
+        let requestID = try! #require(first.requestID)
+        #expect(await exporter.waitForTerminalStatus(of: requestID) == .cleanupRetryableFailure(requestID: requestID, failure: .sessionCleanupFailed))
+        let savedPayloads = await sink.payloads
+        #expect(savedPayloads.count == 1)
+        #expect(savedPayloads[0].format == .png)
+        #expect(savedPayloads[0].sha256Hex == tinyPNGHash)
+        #expect(await cleaner.count == 1)
+
+        #expect(await exporter.requestExport(approvedComparison: state) == .cleanupRetryStarted(requestID: requestID))
+        #expect(await exporter.waitForTerminalStatus(of: requestID) == .completed(requestID: requestID))
+        #expect(await sink.payloads.count == 1)
+        #expect(await cleaner.count == 2)
+    }
+
+    @Test func permanentCleanupFailureRemainsObservableWithoutAnotherSinkWrite() async {
+        let bytes = StaticBytesProvider(values: ["front": .success(.init(data: tinyPNG, format: .png))])
+        let sink = RecordingSink(result: .completed)
+        let cleaner = SequencedCleaner(results: [.failure(.cleanup), .failure(.cleanup)])
+        let exporter = makeExporter(bytes: bytes, sink: sink, cleaner: cleaner, originalID: "front")
+        let state = approvedState(originalID: "front", choice: .original)
+
+        let first = await exporter.requestExport(approvedComparison: state)
+        let requestID = try! #require(first.requestID)
+        #expect(await exporter.waitForTerminalStatus(of: requestID) == .cleanupRetryableFailure(requestID: requestID, failure: .sessionCleanupFailed))
+
+        #expect(await exporter.requestExport(approvedComparison: state) == .cleanupRetryStarted(requestID: requestID))
+        #expect(await exporter.waitForTerminalStatus(of: requestID) == .cleanupRetryableFailure(requestID: requestID, failure: .sessionCleanupFailed))
+        #expect(await exporter.status == .cleanupRetryableFailure(requestID: requestID, failure: .sessionCleanupFailed))
+        #expect(await sink.payloads.count == 1)
+        #expect(await cleaner.count == 2)
+    }
+
+    @Test func preSaveCancellationAndFailureCanRetryWithOnlyOneSuccessfulWrite() async {
+        let controlledBytes = ControlledBytesProvider()
+        let cancelledSink = RecordingSink(result: .completed)
+        let cancelledExporter = makeExporter(bytes: controlledBytes, sink: cancelledSink, cleaner: RecordingCleaner(), originalID: "front")
+        let state = approvedState(originalID: "front", choice: .original)
+
+        let cancelled = await cancelledExporter.requestExport(approvedComparison: state)
+        let cancelledID = try! #require(cancelled.requestID)
+        await controlledBytes.waitForCallCount(1)
+        await cancelledExporter.cancelExport()
+        #expect(await cancelledExporter.waitForTerminalStatus(of: cancelledID) == .ready)
+        let afterCancel = await cancelledExporter.requestExport(approvedComparison: state)
+        await controlledBytes.waitForCallCount(2)
+        await controlledBytes.resumeNext(with: .success(.init(data: tinyPNG, format: .png)))
+        await controlledBytes.resumeNext(with: .success(.init(data: tinyPNG, format: .png)))
+        #expect(await cancelledExporter.waitForTerminalStatus(of: try! #require(afterCancel.requestID)) == .completed(requestID: try! #require(afterCancel.requestID)))
+        #expect(await cancelledSink.payloads.count == 1)
+
+        let failedSink = SequencedSink(results: [.failure(.sink), .success(.completed)])
+        let failedExporter = makeExporter(
+            bytes: SequencedBytesProvider(results: [.success(.init(data: tinyPNG, format: .png)), .success(.init(data: tinyPNG, format: .png))]),
+            sink: failedSink,
+            cleaner: RecordingCleaner(),
+            originalID: "front"
+        )
+        let failed = await failedExporter.requestExport(approvedComparison: state)
+        #expect(await failedExporter.waitForTerminalStatus(of: try! #require(failed.requestID)) == .retryableFailure(.sinkFailed))
+        let afterFailure = await failedExporter.requestExport(approvedComparison: state)
+        #expect(await failedExporter.waitForTerminalStatus(of: try! #require(afterFailure.requestID)) == .completed(requestID: try! #require(afterFailure.requestID)))
+        #expect(await failedSink.payloads.count == 2)
     }
 
     @Test func catalogRejectsEmptyIDsWithoutCrashing() {
@@ -291,7 +363,7 @@ struct ApprovedFrontImageExportTests {
     }
 }
 
-private enum TestError: Error, Sendable { case bytes, sink }
+private enum TestError: Error, Sendable { case bytes, sink, cleanup }
 
 private let tinyPNG = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL9aQAAAABJRU5ErkJggg==")!
 private let tinyPNGHash = "a0dac8a179d6b83d77b15b5b055f45096854bc321d8fba8256f56b09973948bf"
@@ -396,6 +468,20 @@ private actor ControlledCleaner: ApprovedImageExportSessionCleaning {
     }
 
     func finish() { finishContinuation?.resume(); finishContinuation = nil }
+}
+
+private actor SequencedCleaner: ApprovedImageExportSessionCleaning {
+    private var results: [Result<Void, TestError>]
+    private(set) var count = 0
+
+    init(results: [Result<Void, TestError>]) {
+        self.results = results
+    }
+
+    func cleanupAfterApprovedExport() async throws {
+        count += 1
+        try results.removeFirst().get()
+    }
 }
 
 #if canImport(Photos) && os(iOS)

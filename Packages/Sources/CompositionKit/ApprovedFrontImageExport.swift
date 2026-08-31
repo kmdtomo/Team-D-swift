@@ -1,4 +1,5 @@
 import CryptoKit
+import DomainKit
 import Foundation
 
 /// The two finite encodings permitted for a user-approved front-image export.
@@ -104,7 +105,22 @@ public protocol PhotosAddOnlyWriting: Sendable {
 /// T04-02's concrete session store will adapt this boundary to `endSession`.
 /// Cleanup is intentionally invoked only after a sink has completed.
 public protocol ApprovedImageExportSessionCleaning: Sendable {
-    func cleanupAfterApprovedExport() async
+    func cleanupAfterApprovedExport() async throws
+}
+
+/// Concrete bridge to the session-scoped artifact owner. `endSession()` keeps
+/// its cleanup failure observable, allowing the exporter to retry cleanup
+/// without ever issuing a second add-only PhotoKit write.
+public struct CaptureSessionStoreApprovedImageExportCleaner: ApprovedImageExportSessionCleaning {
+    private let sessionStore: CaptureSessionStore
+
+    public init(sessionStore: CaptureSessionStore) {
+        self.sessionStore = sessionStore
+    }
+
+    public func cleanupAfterApprovedExport() async throws {
+        try await sessionStore.endSession()
+    }
 }
 
 public enum ApprovedImageExportFailure: Error, Sendable, Equatable {
@@ -115,6 +131,7 @@ public enum ApprovedImageExportFailure: Error, Sendable, Equatable {
     case bytesProviderFailed
     case sinkFailed
     case photoLibraryAuthorizationDenied
+    case sessionCleanupFailed
 }
 
 public enum ApprovedImageExportStatus: Sendable, Equatable {
@@ -123,9 +140,13 @@ public enum ApprovedImageExportStatus: Sendable, Equatable {
     case exporting(requestID: UUID)
     /// The add-only sink has been invoked. Its outcome now owns the request.
     case saving(requestID: UUID)
-    /// The sink has committed the user's image. This phase must complete
-    /// session cleanup before another request can be accepted or cancelled.
-    case finalizing(requestID: UUID)
+    /// The sink has committed the user's image. Cleanup is now mandatory and
+    /// non-cancellable; no further sink write may start from this state.
+    case cleanupPending(requestID: UUID)
+    /// The image is already saved, but session-only data remains until a
+    /// cleanup-only retry succeeds. This is deliberately distinct from a
+    /// pre-save retryable failure.
+    case cleanupRetryableFailure(requestID: UUID, failure: ApprovedImageExportFailure)
     case retryableFailure(ApprovedImageExportFailure)
     case completed(requestID: UUID)
 }
@@ -134,7 +155,8 @@ public enum ApprovedImageExportStartResult: Sendable, Equatable {
     case started(requestID: UUID)
     case alreadyInFlight(requestID: UUID)
     case saving(requestID: UUID)
-    case finalizing(requestID: UUID)
+    case cleanupPending(requestID: UUID)
+    case cleanupRetryStarted(requestID: UUID)
     case alreadyCompleted(requestID: UUID)
     case rejected(ApprovedImageExportFailure)
 }
@@ -209,8 +231,11 @@ public actor ApprovedFrontImageExporter {
         if case let .saving(requestID) = statusValue {
             return .saving(requestID: requestID)
         }
-        if case let .finalizing(requestID) = statusValue {
-            return .finalizing(requestID: requestID)
+        if case let .cleanupPending(requestID) = statusValue {
+            return .cleanupPending(requestID: requestID)
+        }
+        if case let .cleanupRetryableFailure(requestID, _) = statusValue {
+            return retryCleanup(requestID: requestID)
         }
         if case let .completed(requestID) = statusValue {
             return .alreadyCompleted(requestID: requestID)
@@ -258,9 +283,13 @@ public actor ApprovedFrontImageExporter {
                 let sinkResult = try await sink.addApprovedImage(.init(bytes: bytes))
                 switch sinkResult {
                 case .completed:
-                    guard self.beginFinalizing(requestID: requestID) else { return }
-                    await sessionCleaner.cleanupAfterApprovedExport()
-                    self.finishFinalizing(requestID: requestID)
+                    guard self.beginCleanup(requestID: requestID) else { return }
+                    do {
+                        try await sessionCleaner.cleanupAfterApprovedExport()
+                        self.finishCleanup(requestID: requestID)
+                    } catch {
+                        self.finishCleanupFailure(requestID: requestID)
+                    }
                 case .cancelled:
                     self.finishSavingCancellation(requestID: requestID)
                 case .notAuthorized:
@@ -276,7 +305,7 @@ public actor ApprovedFrontImageExporter {
     }
 
     /// Cancelling is allowed only before the add-only sink commits. Once
-    /// finalization begins, cleanup is non-cancellable to prevent a second
+    /// cleanup begins, it is non-cancellable to prevent a second
     /// save from racing a completed export.
     public func cancelExport() {
         guard case let .exporting(requestID) = statusValue else { return }
@@ -292,7 +321,7 @@ public actor ApprovedFrontImageExporter {
         switch statusValue {
         case let .exporting(activeID) where activeID == requestID,
              let .saving(activeID) where activeID == requestID,
-             let .finalizing(activeID) where activeID == requestID:
+             let .cleanupPending(activeID) where activeID == requestID:
             return await withCheckedContinuation { continuation in
                 terminalWaiters[requestID, default: []].append(continuation)
             }
@@ -331,10 +360,10 @@ public actor ApprovedFrontImageExporter {
         resumeWaiters(for: requestID, with: .ready)
     }
 
-    private func beginFinalizing(requestID: UUID) -> Bool {
+    private func beginCleanup(requestID: UUID) -> Bool {
         guard case let .saving(activeID) = statusValue, activeID == requestID else { return false }
         exportTask = nil
-        statusValue = .finalizing(requestID: requestID)
+        statusValue = .cleanupPending(requestID: requestID)
         return true
     }
 
@@ -358,10 +387,32 @@ public actor ApprovedFrontImageExporter {
         resumeWaiters(for: requestID, with: statusValue)
     }
 
-    private func finishFinalizing(requestID: UUID) {
-        guard case let .finalizing(activeID) = statusValue, activeID == requestID else { return }
+    private func finishCleanup(requestID: UUID) {
+        guard case let .cleanupPending(activeID) = statusValue, activeID == requestID else { return }
+        exportTask = nil
         statusValue = .completed(requestID: requestID)
         resumeWaiters(for: requestID, with: statusValue)
+    }
+
+    private func finishCleanupFailure(requestID: UUID) {
+        guard case let .cleanupPending(activeID) = statusValue, activeID == requestID else { return }
+        exportTask = nil
+        statusValue = .cleanupRetryableFailure(requestID: requestID, failure: .sessionCleanupFailed)
+        resumeWaiters(for: requestID, with: statusValue)
+    }
+
+    private func retryCleanup(requestID: UUID) -> ApprovedImageExportStartResult {
+        statusValue = .cleanupPending(requestID: requestID)
+        let sessionCleaner = sessionCleaner
+        exportTask = Task {
+            do {
+                try await sessionCleaner.cleanupAfterApprovedExport()
+                self.finishCleanup(requestID: requestID)
+            } catch {
+                self.finishCleanupFailure(requestID: requestID)
+            }
+        }
+        return .cleanupRetryStarted(requestID: requestID)
     }
 
     private func resumeWaiters(for requestID: UUID, with status: ApprovedImageExportStatus) {

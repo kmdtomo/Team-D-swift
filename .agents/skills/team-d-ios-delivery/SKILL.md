@@ -30,6 +30,21 @@ Treat every other Codex task, thread, chat, or session as an autonomous user-own
 - Cross-task communication or control is allowed only when the user explicitly requests it in the current task and identifies the intended coordination. Do not infer that permission from a general request to accelerate, parallelize, monitor, finish, or use subagents.
 - Integrate only committed artifacts that are ready under the repository's normal review rules. Do not ask another task to commit, stop, reorder, or prepare a handoff for this task.
 
+## Use one parent with direct implementation subagents
+
+When the user asks this task to use subagents or parallelize delivery, use a shallow topology inside the current task:
+
+- Default to one parent and up to three direct implementation subagents when four concurrency slots are available. Use fewer children when fewer conflict-free work units exist; an idle slot is cheaper than file conflicts or duplicate work.
+- Do not let children spawn grandchildren. Do not create or manage peer Codex tasks as a substitute for child agents. Parallel workers for this plan must be descendants of the current parent only.
+- Prefer `gpt-5.6-sol` with `high` reasoning for the parent when model choice is available; reserve `xhigh` for genuinely difficult architecture, integration, or `P0` decisions. Prefer `gpt-5.6-terra` with `medium` reasoning for implementation children. Preserve an explicit user model choice over these defaults.
+- The parent owns task selection, dependency/artifact checks, lane and file ownership, shared contracts, `project.pbxproj` and scheme/package integration, the heavy-command single-flight queue, one `P0`-only review pass, integration commits, verification evidence, and `task.md` updates.
+- Each child receives exactly one task ID and lane at a time, an upstream commit, an exclusive file set, a dedicated branch/worktree, the required test mode and gate, and one final authoritative verification command. The child normally returns one or two meaningful commits, using a third only when separation is necessary.
+- Children must not edit `task.md`, shared project files, package locks, shared schemas, or root navigation unless the parent explicitly assigns that ownership. They return the candidate SHA, changed files, verification result, and remaining integration/live/device gates.
+- Children implement and write focused tests concurrently, but heavy builds and full test commands remain repository-wide single-flight. The parent reuses the child's successful final-SHA evidence and does not repeat the same build in another scratch path.
+- Do not reserve a child as a standing reviewer. The parent performs the single bounded review and sends work back only for `P0`; `P1` through `P3` do not consume another child pass.
+- When a child reaches `implementation_ready` but waits for device, live, credential, physical-corpus, or another acceptance gate, end that child work unit and immediately reuse the slot for the next non-conflicting local task. Collect device/live checks into their named integration or acceptance waves.
+- Merge ready children in small integration waves. Run one affected app/package integration verification per wave, update evidence centrally, then dispatch the next conflict-free tasks without waiting for unrelated checkboxes.
+
 ## Implement within the lane
 
 - Keep one task ID and one lane per change when practical.

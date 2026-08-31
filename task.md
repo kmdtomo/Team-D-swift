@@ -547,6 +547,16 @@ taskを`[x]`へ変更するcommitには、既存の最終`Verification`記録と
   - owner/release condition: physical device operator/user, rights/PII-cleared 30 distributed captures, complete CSV annotations + ruler/print-scale evidence; then review before checkbox
   - limitations: T11-02/T11-03 remain blocked, no OpenCV adoption decision
 
+- Blocked implementation review (2026-09-01):
+  - status: `blocked`（checkboxは`[ ]`のまま）
+  - commits: `5e93c65`
+  - separable scope: 既存schema v2・18 synthetic case・generator・manifest・marker PDF・全既知worktree/branchの物理logを監査し、外部evidence root、30枚の必須分布、物理iPhone、annotation JSON、rights/PII、100%印刷・定規50.0mm marker evidence、file signature/hashをfail-closedで検証するimport/annotation gateとrunbookを実装した。権利不明binaryや物理写真は追加していない。
+  - tests authored: `scripts/t11_01_measurement_corpus/test_lint_corpus.py`（0/30 blocked、外部30枚matrix ready、外部hash、rights未確認・改ざん・repository内evidence root拒否）
+  - source review: `P0 none`（対象は分離可能なsource/doc候補。物理gate未充足は下記blockerとして維持）
+  - execution: `swift build`、`swift test`、`xcodebuild`、XCUITest、app起動は未実行。source-only corpus/manifest/doc/secret/`git diff --check`のみ実施
+  - blocker: rights/PII-cleared iPhone物理corpus `0/30`、review済みmarker print `0`、定規確認済み50.0mm evidenceなし
+  - owner/release condition: 物理端末operator/userがfrozen markerを100%印刷して50.0mm定規証跡を保持し、必須matrixのiPhone写真30枚以上を権利・PII確認付きで取得・完全annotationする。外部root strict gateとtask owner reviewが完了するまでT11-01はblockedで、T11-03の採否根拠に使用しない
+
 - [x] **T11-02 Vision/Core Image/Accelerate/simdでmarker・輪郭・射影補正PoCを行う**
   - 作業開始記録 (2026-09-01): Lane D。参照artifactはT11-01 synthetic corpus schema v2と既存Apple PoC commits `4c8eed4`/`e5ea981`。所有fileは`MeasurementKit.swift`、`AppleMeasurementPipelineTests.swift`、T11-02 ADR/raw measurement記録で、direct childの専用worktreeへ排他的に委譲する。決定的corpus分類、corner/scale境界、orientation、failure、再現性、性能計測用test codeをauthorし、build/testはPhase 2へ延期する。物理corpus 0/30のためApple採否、marker検出率95%以上、無効scale 0、px/cm誤差1%以下、基準実機p95 1秒以内、memoryはdevice/acceptance gateとして未完のまま保持する。
   - 担当する責務: レーンDが、OpenCVなしで二重正方形検出と安全なscale取得が可能か最初に検証する。
@@ -573,6 +583,15 @@ taskを`[x]`へ変更するcommitには、既存の最終`Verification`記録と
   - 自動テスト方法: どちらのengineも同じcontract test suiteを通し、選択engine以外がproduction dependency graphへ混入しないことをCIで検査する。
   - 実機確認が必要か: 必須。選択engineでT11-02の基準を再測定する。
   - fixture / live: fixture＋実機offline解析。
+  - Blocked implementation review (2026-09-01):
+    - status: `blocked`（checkboxは`[ ]`のまま、engine未選択）
+    - commits: `8f4dd37`
+    - separable scope: Apple-firstの有限decision contract、同一物理corpus evidence evaluator、protocol-only OpenCV wrapper境界、固定基準、binary size/build time/artifact source+SHA/license/NOTICE/privacy/明示承認入力、build-free JSON decision harness、OpenCV dependency/binary guard、ADRを実装した。OpenCV dependency/binary、OpenCV.js/WASM/Web Worker/ArUcoは追加していない。
+    - tests authored: `Packages/Tests/MeasurementKitTests/MeasurementEngineDecisionTests.swift`（物理evidence不足、95%/1%/1秒inclusive境界、Apple選択、same-corpus、OpenCV cost/approval、OpenCV選択、両engine未達fallback、共通有限contract）、`scripts/test_t11_03_decision_gate.py`（現状blocker、捏造decision、早期dependency、blocker drift、Apple pass、Apple fail/OpenCV missing）
+    - source review: `P0 none`（物理比較・最終採否がないためタスク全体は未完成）
+    - execution: build/test/fixture/app/実機測定は未実行。source-only decision/package graph/JSON/secret/`git diff --check`のみ実施
+    - blocker: T11-01物理corpus `0/30`、定規50.0mm・rights/PII・完全annotation・同一corpusのaccuracy/latency/memory evidenceなし
+    - owner/release condition: 物理端末operator/userとLane D/AがT11-01 evidenceを完成し、Apple raw指標を記録する。Appleが固定基準を外した場合だけ同一corpusでpinned OpenCV iOS artifactと配布コストを比較し、明示承認を含むADRでApple/OpenCV/product fallbackのいずれかを確定する
 
 ## 12. 射影補正、px/cm換算、着丈・身幅計算
 
@@ -584,6 +603,15 @@ taskを`[x]`へ変更するcommitには、既存の最終`Verification`記録と
   - 自動テスト方法: thresholdの直前/一致/直後、corner順序、homography round-trip、既知5.0cmのscale、invalid時に値を返さないことを全fixtureで検証する。
   - 実機確認が必要か: 必須。異なる距離/傾きでscale再現性を確認する。
   - fixture / live: 両方。
+  - Blocked implementation review (2026-09-01):
+    - status: `blocked`（checkboxは`[ ]`のまま）
+    - commits: `71f2525`, `5a63ce7`
+    - separable scope: T11-02の安定contractに基づくengine-neutralなupright image→品質→marker検証→garment mask→Double homography/full-plane perspective correction→px/cm pipeline、image/mask同時補正契約、有限result/error、stage間cancellation、逆変換を実装した。invalid時はscale・補正画像・maskを公開しない。選択engine adapter/dependency bindingは追加していない。
+    - tests authored: `Packages/Tests/MeasurementKitTests/MeasurementGeometryPipelineTests.swift`（79/80px、16/17px、0.649/0.650、23/24px、dark/blur、全体in-frame、mask寸法、全marker/segmentation failure、corner 24 permutation、homography round-trip/退化、5.0cm scale、image/mask補正、renderer/stage error、cancellation、invalid no-output）
+    - source review: `P0 none`（engine-neutral候補内。選択engineの製品scope未完成は下記blockerとして維持）
+    - execution: build/test/fixture/live/app/実機は未実行。source-only Swift/doc/secret/`git diff --check`のみ実施
+    - blocker: T11-03がengine未選択で、production adapter/dependency bindingと同一物理corpusのscale再現性証跡がない
+    - owner/release condition: T11-01物理evidenceとT11-02実機指標を揃え、T11-03 Lane D/Aがengineを決定し、選択adapter/bindingを同じcontractへ接続する。Phase 2 compile/focused/full test、fixture/live統合、距離・傾き別の実機scale再現性を完了するまでT12-01はblocked
 
 - [x] **T12-02 測定点提案APIを1回だけ呼びstrictに検証する**
   - 担当する責務: レーンC/Dが、補正済み画像から意味的4端点だけを取得し、cm決定を端末幾何に残す。

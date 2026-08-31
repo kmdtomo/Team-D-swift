@@ -82,4 +82,13 @@ If blocked, keep `[ ]` and record the reason, owner, and objective release condi
 
 Review against the task's exact completion criteria and product acceptance IDs. Prioritize state-safety, privacy, pixel provenance, contract strictness, cancellation, recovery, accessibility, and missing device/live evidence. Do not report generic style preferences as blockers.
 
+Keep audits bounded so review does not become an endless implementation loop:
+
+- Classify every actionable audit finding as `P0`, `P1`, `P2`, or `P3`. Only `P0` blocks the current task, integration wave, or acceptance.
+- Use `P0` only for a concrete, evidenced defect that makes an explicit completion condition false, fails a required build/test, violates a fixed product/security/privacy/data-lifetime/pixel-provenance invariant, risks data loss or a primary-flow crash, or makes the artifact unsafe to integrate. Do not promote preferences, speculative edge cases, cleanup ideas, or optional hardening to `P0`.
+- Treat `P1` through `P3` as separate small follow-up issues. Record them concisely when useful, but skip fixing them in the current task. They must not trigger another implementation pass, another build, a new subagent, a task reopen, or another audit cycle.
+- Do not add a new `task.md` item for a non-`P0` finding unless the user explicitly asks to schedule it. A short backlog or handoff note is sufficient.
+- After one review pass, if there is no `P0` and the task's already-defined verification and acceptance gates pass, finish the task. Re-review only the diff that fixes a `P0` or when the candidate SHA materially changes.
+- If a finding violates a mandatory completion condition, it is not a skippable `P1` through `P3`; classify it as `P0` and name the exact violated condition.
+
 Before handoff, run formatting/lint only where configured, inspect the diff for unrelated changes and secrets, state what passed and what remains unverified, and do not push unless the user requested it.

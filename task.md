@@ -71,7 +71,7 @@
 
 ## 1. 既存資産の棚卸しと移行境界
 
-- [ ] **T01-01 参照元snapshotと要件トレーサビリティを固定する**
+- [x] **T01-01 参照元snapshotと要件トレーサビリティを固定する**
   - 担当する責務: レーンAが、参照元commitとSwift版へ継ぐ要件・受け入れ条件を一意に追跡できるようにする。
   - 依存する先行タスク: なし。
   - 実装対象: `requirements.md`と本`task.md`内のsnapshot記録、参照元OpenSpec/requirements/architectureからSwift受け入れID・タスクへの対応、未解決差分一覧。別のOpenSpecや移行manifestは作成しない。
@@ -79,6 +79,54 @@
   - 自動テスト方法: CIで`requirements.md`と本ファイルのSHA形式、参照リンク、受け入れIDの重複・未割当、`openspec/`非存在をlintする。
   - 実機確認が必要か: 不要。
   - fixture / live: 両方の設計境界を確認する。
+
+### T01-01 トレーサビリティ記録（2026-08-31）
+
+- 固定参照元: [`neko-jpg/Team-D@44065d41e8906d34e5d8e11d7cd4cc14b25d17f2`](https://github.com/neko-jpg/Team-D/tree/44065d41e8906d34e5d8e11d7cd4cc14b25d17f2)。このSHA以外の参照元`main`は要件入力にしない。
+- 調査根拠は参照元の`requirements.md`、`architecture.md`、OpenSpec design、および2つのOpenSpec specである。Swift版の正本は本リポジトリの`requirements.md`であり、`openspec/`、移行manifest、参照元の文書・Web実装は追加しない。
+- 現行参照元の3slot実装は正本ではない。Swift版は`front → back → tag → measurement`の4slotを正本とし、`measurement`を`ShotAssessment`契約へ混在させない。
+- fixtureはXcode/Simulatorで決定的に完走する開発・検証モード、liveは共有HTTPS backendとLiveKit Cloudを使う独立検証モードである。live障害をfixture成功へ置換しない。
+- `SRC-R`は[参照元requirements §3〜6](https://github.com/neko-jpg/Team-D/blob/44065d41e8906d34e5d8e11d7cd4cc14b25d17f2/requirements.md)、`SRC-A`は[architecture §5〜9](https://github.com/neko-jpg/Team-D/blob/44065d41e8906d34e5d8e11d7cd4cc14b25d17f2/architecture.md)、`SRC-G`は[guided-garment-capture spec](https://github.com/neko-jpg/Team-D/blob/44065d41e8906d34e5d8e11d7cd4cc14b25d17f2/openspec/changes/build-listing-photo-assistant-mvp/specs/guided-garment-capture/spec.md)、`SRC-B`は[background-preserving-edit spec](https://github.com/neko-jpg/Team-D/blob/44065d41e8906d34e5d8e11d7cd4cc14b25d17f2/openspec/changes/build-listing-photo-assistant-mvp/specs/background-preserving-edit/spec.md)、`SRC-D`は[OpenSpec design §2〜9](https://github.com/neko-jpg/Team-D/blob/44065d41e8906d34e5d8e11d7cd4cc14b25d17f2/openspec/changes/build-listing-photo-assistant-mvp/design.md)を指す。いずれも調査根拠であり、Swiftの受け入れIDは`requirements.md`で再構成・固定したものとする。
+
+| Swift受け入れID | 実装・検証タスク | 参照元根拠（source → Swift AC） |
+|---|---|---|
+| AC-UI-001 | T02-02, T17-03, T19-04 | SRC-R §4, SRC-G「撮影セッションは必須写真と進捗を示す」 |
+| AC-CAP-001 | T06-01, T06-02, T18-01, T19-04 | SRC-R §5 R1/R2, SRC-G「固定ガイドとリアルタイム助言」 |
+| AC-CAP-002 | T08-01, T08-02, T18-03, T19-04 | SRC-R §5 R1/R2, SRC-G「ライブ助言はサーバーからpush」 |
+| AC-CAP-003 | T06-02, T08-02, T18-03, T19-04 | SRC-R §5 R2, SRC-G「固定ガイドとリアルタイム助言」 |
+| AC-CAP-004 | T04-03, T08-03, T18-01, T19-04 | SRC-G「ライブ助言はサーバーからpush」のstale scenario, SRC-G「画面遷移はアプリ状態から決定」 |
+| AC-CAP-005 | T05-01, T06-01, T06-02, T18-01, T19-04 | SRC-R §5 R1/R2, SRC-G「手動撮影はライブ判定により禁止されない」 |
+| AC-CAP-006 | T09-01, T09-02, T10-01, T17-03, T18-03, T19-04 | SRC-R §5 R3/R4, SRC-G「撮影後AIは限定された構造化結果を返す」 |
+| AC-FLOW-001 | T04-01, T10-01, T17-03, T18-03, T19-04 | SRC-R §4/§5 R4, SRC-G「撮影セッションは必須写真と進捗を示す」 |
+| AC-MEAS-001 | T11-02, T12-01, T12-02, T12-03, T13-01, T13-02, T18-03, T19-04 | SRC-R §5 R5, SRC-A §6, SRC-G「採寸」「幾何検証」「補正と承認」 |
+| AC-MEAS-002 | T10-02, T13-03, T17-03, T18-03, T19-04 | SRC-G「採寸写真を幾何検証して縮尺を得る」のfailure scenarios, SRC-G「カメラと外部処理の失敗から復帰」 |
+| AC-MEAS-003 | T11-02, T11-03, T12-03, T18-03, T19-04 | SRC-D §6（50mm/OpenCV.jsは調査根拠のみ）、SRC-A §6。Apple-first iOS gateはSwift適応でありOpenCV.jsを移植しない。 |
+| AC-GATE-001 | T04-01, T10-01, T13-02, T17-03, T19-04 | SRC-R §5 R4/R5, SRC-B「必須写真と採寸承認の完了後」 |
+| AC-EDIT-001 | T14-01, T15-02, T17-02, T19-04 | SRC-R §5 R6/R7, SRC-B「正面画像だけを編集対象にする」 |
+| AC-EDIT-002 | T14-02, T17-02, T19-04 | SRC-R §5 R6, SRC-D「商品を含まない背景だけを生成する」 |
+| AC-EDIT-003 | T15-01, T15-02, T17-01, T19-04 | SRC-R §5 R7, SRC-A §8, SRC-B「商品領域は元画像とmaskから合成」 |
+| AC-APPROVAL-001 | T13-01, T13-02, T16-01, T17-03, T19-04 | SRC-R §5 R5/R8, SRC-G「補正と承認」, SRC-B「比較して承認」 |
+| AC-DATA-001 | T04-02, T16-02, T17-01, T18-02, T19-04 | SRC-R §5 R9, SRC-A §9, SRC-G「失敗から復帰」 |
+| AC-MODE-001 | T03-03, T03-04, T10-02, T17-01, T17-02, T17-03, T19-04 | SRC-R §5 R9, SRC-D §4「Python backendのprovider境界」 |
+| AC-DEVICE-001 | T05-02, T05-03, T06-02, T13-01, T13-02, T16-01, T16-02, T18-01, T19-04 | Swift-native iPhone acceptance（参照元に同一条項なし）。SRC-R §4/§5とSRC-A §11を調査根拠に、rotation/interruption/VoiceOver/Dynamic Typeを追加検証する。 |
+
+#### 未解決の参照元差分／外部依存
+
+| 項目 | 現時点の事実 | 所有・解消条件 |
+|---|---|---|
+| Guidance sequence | 参照元TypeScript schemaは`sequence=0`を許容するが、実装済みPython backend wireは1以上を要求する。 | T03-01でSwiftはwireに合わせ0を拒否し、参照元側のschema差分を解消または互換方針として記録する。 |
+| Agent Guidance push | transport coreはあるが、実vision providerからdata packet/RPCへpushする配線は未実装。 | 参照元shared backend owner。T03-02/T03-05でavailabilityとversion付き契約を固定し、T08-02 live完了前に提供する。 |
+| 4つのHTTP endpoint | `/api/analyze-shot`、`/api/suggest-measurement-points`、`/api/generate-background`、`/api/remove-background`は参照元snapshotで未実装。 | 参照元shared backend owner。Swiftは代替backendを実装せず、T03-02でcontractを固定し各live taskの外部blockerとして扱う。 |
+| fixture binary | 参照元9画像のコピー可否・利用許諾・hashは未判定。 | T01-02で資産単位に許可または不採用を決めるまでコピーしない。 |
+| AC-DEVICE-001 evidence | VoiceOverと最大Dynamic Typeの実機確認は要件にあるが、T18-01/T19-04の完了条件に明示的な照合項目がない。 | T19-04のtrace/evidence設計時に未充足として扱い、要件を変更せず、該当タスクの範囲で明示的な証跡チェックを追加する。 |
+
+- Verification (2026-08-31):
+  - commit/build: docs-only; product build not required for this task
+  - automated tests: `bash -n scripts/lint_t01_01.sh`、`./scripts/lint_t01_01.sh`（19 acceptance IDs mapped）、`git diff --check` passed
+  - fixture: design boundary verified; Xcode/Simulator fixture is deterministic and remains independent from live
+  - live: design boundary verified; shared HTTPS backend/LiveKit Cloud failures do not fall back to fixture
+  - device: not required
+  - limitations: Guidance push、4 HTTP endpoints、fixture binary provenance、AC-DEVICE-001 evidence gap remain recorded external/follow-on work; no later task is claimed complete
 
 - [ ] **T01-02 コピー可否、fixture、ライセンスを資産単位で判定する**
   - 担当する責務: レーンA/Fが、必要資産だけを安全に持ち込み、Web固有物と権利不明物を除外する。

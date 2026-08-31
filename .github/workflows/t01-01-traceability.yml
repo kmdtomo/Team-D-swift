@@ -1,0 +1,17 @@
+name: T01-01 Traceability
+
+on:
+  pull_request:
+  push:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check lint syntax
+        run: bash -n scripts/lint_t01_01.sh
+      - name: Verify snapshot and traceability
+        run: ./scripts/lint_t01_01.sh
+      - name: Check whitespace errors
+        run: git diff --check

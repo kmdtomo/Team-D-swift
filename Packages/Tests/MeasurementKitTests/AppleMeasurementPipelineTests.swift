@@ -334,7 +334,7 @@ import XCTest
 }
 
 final class AppleMeasurementPipelinePerformanceTests: XCTestCase {
-    func testCorpusRecordsRawP95LatencyAndEnforcesOneSecondPerImageGate() throws {
+    func testCorpusRecordsRawP95LatencyForOneSecondDeviceGate() throws {
         let manifest = try loadCorpusManifest()
         let fixtures = try manifest.cases.map { fixture in
             (
@@ -374,11 +374,13 @@ final class AppleMeasurementPipelinePerformanceTests: XCTestCase {
         attachment.lifetime = .keepAlways
         add(attachment)
 
-        XCTAssertLessThanOrEqual(
-            p95Milliseconds,
-            1_000,
-            "T11-02 baseline-device acceptance requires p95 <= 1 second"
-        )
+        #if os(iOS) && !targetEnvironment(simulator)
+            XCTAssertLessThanOrEqual(
+                p95Milliseconds,
+                1_000,
+                "T11-02 baseline-device acceptance requires p95 <= 1 second"
+            )
+        #endif
     }
 
     func testCorpusRecordsXCTestClockAndMemoryMetrics() throws {

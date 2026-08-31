@@ -18,8 +18,10 @@ public struct AppProducedVideoFrame: Equatable, Sendable {
         height: Int,
         orientation: CaptureVideoOrientation
     ) throws {
+        // `CMSampleBuffer` can validly start at the zero time origin. The
+        // monotonic sequence, not a nonzero presentation timestamp, is the
+        // freshness boundary.
         guard sequence > 0,
-              timestampNanoseconds > 0,
               width > 0,
               height > 0 else {
             throw AppProducedVideoFrameError.invalidMetadata

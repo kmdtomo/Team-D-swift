@@ -13,13 +13,15 @@ public enum AppProducedCaptureSampleAdapter {
         sample: AnalysisSample,
         orientation: CaptureVideoOrientation
     ) throws -> AppProducedVideoFrame? {
-        guard let pixelBuffer = sample.frame?.pixelBuffer else { return nil }
+        guard let originalSample = sample.frame else { return nil }
+        let pixelBuffer = originalSample.pixelBuffer
         return try AppProducedVideoFrame(
             sequence: sample.sequence,
             timestampNanoseconds: sample.timestampNanoseconds,
             width: CVPixelBufferGetWidth(pixelBuffer),
             height: CVPixelBufferGetHeight(pixelBuffer),
-            orientation: orientation
+            orientation: orientation,
+            originalSample: originalSample
         )
     }
 }
@@ -33,42 +35,30 @@ import LiveKit
 /// uses the SDK camera capturer.
 public final class LiveKitBufferCapturerAdapter: AppProducedVideoFramePublishing, @unchecked Sendable {
     private let capturer: BufferCapturer
+    private let didCaptureFrame: @Sendable () async -> Void
 
-    public init(track: LocalVideoTrack) throws {
+    public init(
+        track: LocalVideoTrack,
+        didCaptureFrame: @escaping @Sendable () async -> Void = {}
+    ) throws {
         guard let capturer = track.capturer as? BufferCapturer else {
             throw AppProducedVideoFrameError.unavailableSDK
         }
         self.capturer = capturer
+        self.didCaptureFrame = didCaptureFrame
     }
 
     public func publish(_ frame: AppProducedVideoFrame) async throws {
-        // Metadata alone is intentionally insufficient to publish pixels. This
-        // makes an incorrectly wired integration fail explicitly instead of
-        // looking like a successful fixture camera.
-        _ = frame
-        throw AppProducedVideoFrameError.unavailableSDK
-    }
-
-    /// Reserved SDK pixel handoff, not an operational T08-01 publish path.
-    /// `LatestAppProducedFramePublisher` currently receives metadata only, so
-    /// it cannot call this overload. T08-02 must first extend the capture
-    /// boundary to retain the original `CMSampleBuffer` with its metadata, then
-    /// wire that typed payload through the coordinator. The sample must
-    /// originate in T05's already-configured video output; this adapter never
-    /// creates an AVCapture input, output, or session.
-    public func publish(
-        sampleBuffer: CMSampleBuffer,
-        metadata: AppProducedVideoFrame
-    ) throws {
-        guard CMSampleBufferGetImageBuffer(sampleBuffer) != nil else {
-            throw AppProducedVideoFrameError.invalidMetadata
-        }
+        guard let originalSample = frame.originalSample,
+              CMSampleBufferGetImageBuffer(originalSample.sampleBuffer) != nil
+        else { throw AppProducedVideoFrameError.invalidMetadata }
         // The T05 capture connection owns video rotation before the frame leaves
         // AVFoundation. BufferCapturer accepts that original CMSampleBuffer;
-        // `metadata.orientation` is retained for an integration assertion rather
+        // `frame.orientation` is retained for an integration assertion rather
         // than being guessed or transformed by a second camera pipeline.
-        _ = metadata.orientation
-        capturer.capture(sampleBuffer)
+        _ = frame.orientation
+        capturer.capture(originalSample.sampleBuffer)
+        await didCaptureFrame()
     }
 
     public func cancelPublishing() async {}

@@ -1,5 +1,6 @@
 import Foundation
 #if os(iOS)
+import CoreMedia
 import CoreVideo
 #endif
 
@@ -30,12 +31,23 @@ public struct CapturePhotoMetadata: Equatable, Sendable {
 }
 
 #if os(iOS)
-/// A retained, read-only-to-CaptureKit Core Video frame handoff. It is exclusively
-/// held by the controller's capacity-one slot; CaptureKit never mutates it.
-/// The unchecked conformance is limited to the Core Video buffer handle.
+/// A retained, read-only camera sample from the sole Team-D capture session.
+/// Keeping the original `CMSampleBuffer` preserves its timing, format, and pixel
+/// buffer for LiveKit without copying pixels or creating a second camera owner.
+/// It is held only by bounded, session-scoped consumers.
 public final class AnalysisFrame: @unchecked Sendable {
-    public let pixelBuffer: CVPixelBuffer
-    public init(pixelBuffer: CVPixelBuffer) { self.pixelBuffer = pixelBuffer }
+    public let sampleBuffer: CMSampleBuffer
+    public var pixelBuffer: CVPixelBuffer {
+        // The only initializer rejects samples without an image buffer.
+        CMSampleBufferGetImageBuffer(sampleBuffer)!
+    }
+
+    public init(sampleBuffer: CMSampleBuffer) throws {
+        guard CMSampleBufferGetImageBuffer(sampleBuffer) != nil else {
+            throw CaptureSessionError.configurationFailed("camera sample has no image buffer")
+        }
+        self.sampleBuffer = sampleBuffer
+    }
 }
 #endif
 
@@ -84,6 +96,7 @@ public protocol CaptureSessionDriving: AnyObject, Sendable {
 public actor CaptureSessionController {
     private let authorization: any CaptureAuthorizing
     private let driver: any CaptureSessionDriving
+    private let analysisSampleObserver: @Sendable (AnalysisSample) -> Void
     private var stateStorage: CaptureSessionState = .idle
     private var generation: UInt64 = 0
     private var nextPhotoRequestID: UInt64 = 0
@@ -91,7 +104,15 @@ public actor CaptureSessionController {
     private var latestSample: AnalysisSample?
     private var sampleWatermark: UInt64 = 0
 
-    public init(authorization: any CaptureAuthorizing, driver: any CaptureSessionDriving) { self.authorization = authorization; self.driver = driver }
+    public init(
+        authorization: any CaptureAuthorizing,
+        driver: any CaptureSessionDriving,
+        analysisSampleObserver: @escaping @Sendable (AnalysisSample) -> Void = { _ in }
+    ) {
+        self.authorization = authorization
+        self.driver = driver
+        self.analysisSampleObserver = analysisSampleObserver
+    }
     public var state: CaptureSessionState { stateStorage }
     public var latestAnalysisSampleSequence: UInt64? { latestSample?.sequence }
 
@@ -158,6 +179,7 @@ public actor CaptureSessionController {
         guard token == generation, stateStorage == .running, sample.sequence > sampleWatermark else { return }
         sampleWatermark = sample.sequence
         latestSample = sample
+        analysisSampleObserver(sample)
     }
     public func takeLatestAnalysisSample() -> AnalysisSample? { defer { latestSample = nil }; return latestSample }
 

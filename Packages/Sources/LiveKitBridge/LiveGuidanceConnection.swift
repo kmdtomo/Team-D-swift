@@ -71,15 +71,18 @@ public struct LiveGuidanceJoinedRoom: Sendable {
     public let handle: UUID
     public let lossyPackets: AsyncStream<LiveGuidanceTransportPacket>
     public let reliablePackets: AsyncStream<LiveGuidanceTransportPacket>
+    public let statusChanges: AsyncStream<LiveGuidanceTransportConnectionStatus>
 
     public init(
         handle: UUID,
         lossyPackets: AsyncStream<LiveGuidanceTransportPacket>,
-        reliablePackets: AsyncStream<LiveGuidanceTransportPacket>
+        reliablePackets: AsyncStream<LiveGuidanceTransportPacket>,
+        statusChanges: AsyncStream<LiveGuidanceTransportConnectionStatus>
     ) {
         self.handle = handle
         self.lossyPackets = lossyPackets
         self.reliablePackets = reliablePackets
+        self.statusChanges = statusChanges
     }
 }
 
@@ -132,8 +135,10 @@ public enum LiveGuidanceConnectionFailure: Error, Equatable, Sendable {
     case invalidClock
     case tokenRequestFailed
     case tokenExpired
+    case tokenLifetimeExceedsHardMaximum
     case invalidTokenResponse
     case roomJoinFailed
+    case transportDisconnected
     case packetStreamEnded
     case cancelled
 }
@@ -143,6 +148,7 @@ public enum LiveGuidanceConnectionPhase: Equatable, Sendable {
     case requestingToken(LiveGuidanceJoinKind, UUID)
     case joiningRoom(LiveGuidanceJoinKind, UUID)
     case connected
+    case reconnecting
     case leaving
     case failed(LiveGuidanceConnectionFailure)
     case unavailable(LiveGuidanceProductionBlocker)
@@ -211,6 +217,8 @@ public struct LiveGuidanceConnectionSnapshot: Equatable, Sendable {
     public let lastGuidanceRejection: LiveGuidancePacketRejection?
     public let opaqueReliablePacketCount: UInt64
     public let videoPublishState: LiveGuidanceVideoPublishState
+    public let latencySampleCount: UInt64
+    public let guidanceDeliveryLatencyP95Milliseconds: Int64?
 }
 
 /// Session-scoped Room coordinator. Every async result is checked against its
@@ -231,6 +239,7 @@ public actor LiveGuidanceConnection {
     private var requestID: UUID?
     private var room: UUID?
     private var joinTask: Task<Void, Never>?
+    private var publishTask: Task<Void, Never>?
     private var packetTasks: [Task<Void, Never>] = []
     private var hasConnected = false
     private var publishState: LiveGuidanceVideoPublishState = .notRequested
@@ -238,6 +247,8 @@ public actor LiveGuidanceConnection {
     private var rejectedCount: UInt64 = 0
     private var lastRejection: LiveGuidancePacketRejection?
     private var reliableCount: UInt64 = 0
+    private var deliveryLatencies: [Int64] = []
+    private var latencySampleCount: UInt64 = 0
 
     public init(
         sessionID: String,
@@ -264,7 +275,7 @@ public actor LiveGuidanceConnection {
     /// Idempotent during an active request, connection, or leave.
     public func join() {
         switch phase {
-        case .requestingToken, .joiningRoom, .connected, .leaving: return
+        case .requestingToken, .joiningRoom, .connected, .reconnecting, .leaving: return
         case .disconnected, .failed, .unavailable: break
         }
         generation = nextGeneration()
@@ -299,6 +310,8 @@ public actor LiveGuidanceConnection {
         requestID = nil
         joinTask?.cancel()
         joinTask = nil
+        publishTask?.cancel()
+        publishTask = nil
         packetTasks.forEach { $0.cancel() }
         packetTasks.removeAll()
         let joinedRoom = room
@@ -309,7 +322,8 @@ public actor LiveGuidanceConnection {
 
     public func setCurrentShot(_ shot: Shot) { filter.setCurrentShot(shot) }
 
-    /// Remains explicit because T08-01 has no operational pixel handoff yet.
+    /// Explicit retry entry point. The initial request starts automatically once
+    /// Room join succeeds; repeated calls remain idempotent.
     public func requestAppProducedVideoPublish() async {
         guard phase == .connected,
               let joinedRoom = room,
@@ -362,7 +376,9 @@ public actor LiveGuidanceConnection {
             rejectedGuidanceCount: rejectedCount,
             lastGuidanceRejection: lastRejection,
             opaqueReliablePacketCount: reliableCount,
-            videoPublishState: publishState
+            videoPublishState: publishState,
+            latencySampleCount: latencySampleCount,
+            guidanceDeliveryLatencyP95Milliseconds: latencyP95()
         )
     }
 
@@ -398,6 +414,17 @@ public actor LiveGuidanceConnection {
                 finishJoin(LiveGuidanceConnectionFailure.tokenExpired, fallback: .tokenExpired,
                            generation: operationGeneration,
                            requestID: operationRequestID, sessionID: sessionID)
+                return
+            }
+            let nowSeconds = now / 1_000
+            guard token.expiresAt - nowSeconds <= 300 else {
+                finishJoin(
+                    LiveGuidanceConnectionFailure.tokenLifetimeExceedsHardMaximum,
+                    fallback: .tokenLifetimeExceedsHardMaximum,
+                    generation: operationGeneration,
+                    requestID: operationRequestID,
+                    sessionID: sessionID
+                )
                 return
             }
         } catch {
@@ -447,6 +474,7 @@ public actor LiveGuidanceConnection {
         startConsumers(joined, sessionID: sessionID,
                        requestID: operationRequestID,
                        generation: operationGeneration)
+        beginAppProducedVideoPublish()
     }
 
     private func startConsumers(
@@ -480,6 +508,21 @@ public actor LiveGuidanceConnection {
                                               requestID: operationRequestID,
                                               generation: operationGeneration)
             },
+            Task { [weak self] in
+                for await status in joined.statusChanges {
+                    guard !Task.isCancelled else { return }
+                    await self?.transportStatusChanged(
+                        status,
+                        room: joined.handle,
+                        sessionID: sessionID,
+                        requestID: operationRequestID,
+                        generation: operationGeneration
+                    )
+                }
+                await self?.packetStreamEnded(room: joined.handle, sessionID: sessionID,
+                                              requestID: operationRequestID,
+                                              generation: operationGeneration)
+            },
         ]
     }
 
@@ -506,6 +549,8 @@ public actor LiveGuidanceConnection {
             reject(.filtered(reason))
         case .accepted(let display):
             acceptedCount &+= 1
+            let latency = now >= event.observedAt ? now - event.observedAt : nil
+            if let latency { recordLatency(latency) }
             await receiver.receive(
                 .guidance(
                     .init(
@@ -514,7 +559,7 @@ public actor LiveGuidanceConnection {
                         shot: event.shot,
                         display: display,
                         observedAtEpochMilliseconds: event.observedAt,
-                        deliveryLatencyMilliseconds: now >= event.observedAt ? now - event.observedAt : nil
+                        deliveryLatencyMilliseconds: latency
                     )
                 )
             )
@@ -545,7 +590,53 @@ public actor LiveGuidanceConnection {
         )
     }
 
+    private func transportStatusChanged(
+        _ status: LiveGuidanceTransportConnectionStatus,
+        room joinedRoom: UUID,
+        sessionID: String,
+        requestID operationRequestID: UUID,
+        generation operationGeneration: UInt64
+    ) async {
+        guard isCurrent(generation: operationGeneration,
+                        requestID: operationRequestID,
+                        sessionID: sessionID, room: joinedRoom) else { return }
+        switch status {
+        case .connecting:
+            break
+        case .connected:
+            phase = .connected
+            filter.transitionConnection(to: .connected)
+        case .reconnecting:
+            phase = .reconnecting
+            filter.transitionConnection(to: .reconnecting)
+        case .disconnected:
+            await transportEnded(
+                .transportDisconnected,
+                room: joinedRoom,
+                sessionID: sessionID,
+                requestID: operationRequestID,
+                generation: operationGeneration
+            )
+        }
+    }
+
     private func packetStreamEnded(
+        room joinedRoom: UUID,
+        sessionID: String,
+        requestID operationRequestID: UUID,
+        generation operationGeneration: UInt64
+    ) async {
+        await transportEnded(
+            .packetStreamEnded,
+            room: joinedRoom,
+            sessionID: sessionID,
+            requestID: operationRequestID,
+            generation: operationGeneration
+        )
+    }
+
+    private func transportEnded(
+        _ failure: LiveGuidanceConnectionFailure,
         room joinedRoom: UUID,
         sessionID: String,
         requestID operationRequestID: UUID,
@@ -559,10 +650,32 @@ public actor LiveGuidanceConnection {
         room = nil
         filter.transitionConnection(to: .disconnected)
         publishState = .stopped
-        phase = .failed(.packetStreamEnded)
+        phase = .failed(failure)
+        publishTask?.cancel()
+        publishTask = nil
         packetTasks.forEach { $0.cancel() }
         packetTasks.removeAll()
         await transport.leave(joinedRoom)
+    }
+
+    private func beginAppProducedVideoPublish() {
+        publishTask?.cancel()
+        publishTask = Task { [weak self] in
+            await self?.requestAppProducedVideoPublish()
+        }
+    }
+
+    private func recordLatency(_ latency: Int64) {
+        latencySampleCount &+= 1
+        if deliveryLatencies.count == 256 { deliveryLatencies.removeFirst() }
+        deliveryLatencies.append(latency)
+    }
+
+    private func latencyP95() -> Int64? {
+        guard !deliveryLatencies.isEmpty else { return nil }
+        let sorted = deliveryLatencies.sorted()
+        let rank = max(1, Int((Double(sorted.count) * 0.95).rounded(.up)))
+        return sorted[rank - 1]
     }
 
     private func reject(_ rejection: LiveGuidancePacketRejection) {

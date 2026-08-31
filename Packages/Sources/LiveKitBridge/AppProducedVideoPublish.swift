@@ -10,13 +10,20 @@ public struct AppProducedVideoFrame: Equatable, Sendable {
     public let width: Int
     public let height: Int
     public let orientation: CaptureVideoOrientation
+    #if os(iOS)
+    /// The original timed sample from T05's sole capture session. This is never
+    /// serialized, copied, persisted, or replaced with a second camera source.
+    public let originalSample: AnalysisFrame?
+    #endif
 
+    #if os(iOS)
     public init(
         sequence: UInt64,
         timestampNanoseconds: UInt64,
         width: Int,
         height: Int,
-        orientation: CaptureVideoOrientation
+        orientation: CaptureVideoOrientation,
+        originalSample: AnalysisFrame? = nil
     ) throws {
         // `CMSampleBuffer` can validly start at the zero time origin. The
         // monotonic sequence, not a nonzero presentation timestamp, is the
@@ -31,6 +38,35 @@ public struct AppProducedVideoFrame: Equatable, Sendable {
         self.width = width
         self.height = height
         self.orientation = orientation
+        self.originalSample = originalSample
+    }
+    #else
+    public init(
+        sequence: UInt64,
+        timestampNanoseconds: UInt64,
+        width: Int,
+        height: Int,
+        orientation: CaptureVideoOrientation
+    ) throws {
+        guard sequence > 0,
+              width > 0,
+              height > 0 else {
+            throw AppProducedVideoFrameError.invalidMetadata
+        }
+        self.sequence = sequence
+        self.timestampNanoseconds = timestampNanoseconds
+        self.width = width
+        self.height = height
+        self.orientation = orientation
+    }
+    #endif
+
+    public static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.sequence == rhs.sequence
+            && lhs.timestampNanoseconds == rhs.timestampNanoseconds
+            && lhs.width == rhs.width
+            && lhs.height == rhs.height
+            && lhs.orientation == rhs.orientation
     }
 }
 

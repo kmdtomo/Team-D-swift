@@ -170,7 +170,16 @@ struct CompositionProvenanceTests {
     }
 
     private func blend(front: [UInt8], background: [UInt8], mask: Int) -> [UInt8] {
-        zip(front, background).map { UInt8((Int($0) * mask + Int($1) * (255 - mask) + 127) / 255) }
+        var blended: [UInt8] = []
+        blended.reserveCapacity(front.count)
+        let inverseMask = 255 - mask
+        for index in front.indices {
+            let foreground = Int(front[index])
+            let replacement = Int(background[index])
+            let numerator = foreground * mask + replacement * inverseMask + 127
+            blended.append(UInt8(numerator / 255))
+        }
+        return blended
     }
 
     private func fnv1a(_ bytes: [UInt8]) -> UInt64 {

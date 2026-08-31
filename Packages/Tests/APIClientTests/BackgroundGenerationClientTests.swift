@@ -92,6 +92,59 @@ struct BackgroundStylePolicyTests {
                 == .unavailable(.noLicenseConfirmedRepositoryAsset)
         )
         #expect(!policy.fixedBackground.isSelectable)
+        #expect(policy.fixedBackground.descriptor == nil)
+    }
+
+    @Test func licenseConfirmedSelectionRequiresStableAssetAndEvidenceMetadata() throws {
+        let descriptor = try verifiedFixedBackgroundDescriptor()
+        let selection = BackgroundFixedAssetSelection.licenseConfirmed(descriptor)
+        #expect(selection.isSelectable)
+        #expect(selection.descriptor == descriptor)
+        #expect(throws: BackgroundFixedAssetDescriptorError.invalidAssetID) {
+            try BackgroundFixedAssetDescriptor(
+                assetID: "not stable",
+                repositoryRelativePath: descriptor.repositoryRelativePath,
+                sha256: descriptor.sha256,
+                licenseEvidenceID: descriptor.licenseEvidenceID,
+                inventoryEvidenceID: descriptor.inventoryEvidenceID
+            )
+        }
+        #expect(throws: BackgroundFixedAssetDescriptorError.invalidRepositoryRelativePath) {
+            try BackgroundFixedAssetDescriptor(
+                assetID: descriptor.assetID,
+                repositoryRelativePath: "../untracked.png",
+                sha256: descriptor.sha256,
+                licenseEvidenceID: descriptor.licenseEvidenceID,
+                inventoryEvidenceID: descriptor.inventoryEvidenceID
+            )
+        }
+        #expect(throws: BackgroundFixedAssetDescriptorError.invalidSHA256) {
+            try BackgroundFixedAssetDescriptor(
+                assetID: descriptor.assetID,
+                repositoryRelativePath: descriptor.repositoryRelativePath,
+                sha256: "not-a-sha256",
+                licenseEvidenceID: descriptor.licenseEvidenceID,
+                inventoryEvidenceID: descriptor.inventoryEvidenceID
+            )
+        }
+        #expect(throws: BackgroundFixedAssetDescriptorError.invalidLicenseEvidenceID) {
+            try BackgroundFixedAssetDescriptor(
+                assetID: descriptor.assetID,
+                repositoryRelativePath: descriptor.repositoryRelativePath,
+                sha256: descriptor.sha256,
+                licenseEvidenceID: "",
+                inventoryEvidenceID: descriptor.inventoryEvidenceID
+            )
+        }
+        #expect(throws: BackgroundFixedAssetDescriptorError.invalidInventoryEvidenceID) {
+            try BackgroundFixedAssetDescriptor(
+                assetID: descriptor.assetID,
+                repositoryRelativePath: descriptor.repositoryRelativePath,
+                sha256: descriptor.sha256,
+                licenseEvidenceID: descriptor.licenseEvidenceID,
+                inventoryEvidenceID: ""
+            )
+        }
     }
 }
 
@@ -205,19 +258,33 @@ struct BackgroundGenerationClientTests {
             height: 1,
             pixels: [(1, 2, 3, 0)]
         )
-        let cases: [(BackgroundGenerationHTTPResponse, BackgroundGenerationFailureReason)] = [
-            (.init(statusCode: 200, contentType: "application/octet-stream", body: Data()), .invalidContentType),
-            (.init(statusCode: 200, contentType: "image/png", body: Data("not-png".utf8)), .nonPNG),
-            (
-                .init(
-                    statusCode: 200,
-                    contentType: "image/png",
-                    body: Data([137, 80, 78, 71, 13, 10, 26, 10, 0])
+        let cases: [(BackgroundGenerationHTTPResponse, BackgroundGenerationFailureReason, BackgroundRetryDisposition)] =
+            [
+                (
+                    .init(statusCode: 200, contentType: "application/octet-stream", body: Data()),
+                    .invalidContentType,
+                    .disallowed
                 ),
-                .invalidImage
-            ),
-            (.init(statusCode: 200, contentType: "image/png", body: transparent), .transparentImage),
-        ]
+                (
+                    .init(statusCode: 200, contentType: "image/png", body: Data("not-png".utf8)),
+                    .nonPNG,
+                    .sameRequestIdentity
+                ),
+                (
+                    .init(
+                        statusCode: 200,
+                        contentType: "image/png",
+                        body: Data([137, 80, 78, 71, 13, 10, 26, 10, 0])
+                    ),
+                    .invalidImage,
+                    .sameRequestIdentity
+                ),
+                (
+                    .init(statusCode: 200, contentType: "image/png", body: transparent),
+                    .transparentImage,
+                    .sameRequestIdentity
+                ),
+            ]
 
         for (index, entry) in cases.enumerated() {
             let transport = RecordingBackgroundTransport([.response(entry.0)])
@@ -232,7 +299,7 @@ struct BackgroundGenerationClientTests {
                 continue
             }
             #expect(failure.reason == entry.1)
-            #expect(failure.recovery.retry == .sameRequestIdentity)
+            #expect(failure.recovery.retry == entry.2)
         }
     }
 
@@ -263,19 +330,19 @@ struct BackgroundGenerationClientTests {
                 ),
                 (
                     .init(statusCode: 503, contentType: "application/json", body: wrongProvider),
-                    .invalidProviderError(503), .sameRequestIdentity
+                    .invalidProviderError(503), .disallowed
                 ),
                 (
                     .init(statusCode: 502, contentType: "application/json", body: invalidEnvelope),
-                    .invalidProviderError(502), .sameRequestIdentity
+                    .invalidProviderError(502), .disallowed
                 ),
                 (
                     .init(statusCode: 429, contentType: "text/plain", body: Data()), .invalidContentType,
-                    .sameRequestIdentity
+                    .disallowed
                 ),
                 (
                     .init(statusCode: 418, contentType: "application/json", body: validRetryable),
-                    .unexpectedStatus(418), .sameRequestIdentity
+                    .unexpectedStatus(418), .disallowed
                 ),
             ]
 
@@ -316,6 +383,32 @@ struct BackgroundGenerationClientTests {
             failure.recovery.fixedBackground
                 == .unavailable(.noLicenseConfirmedRepositoryAsset)
         )
+    }
+
+    @Test func injectedVerifiedFixedBackgroundAppearsInFailureRecovery() async throws {
+        let descriptor = try verifiedFixedBackgroundDescriptor()
+        let policy = BackgroundStylePolicy(
+            fixedBackground: .licenseConfirmed(descriptor)
+        )
+        let transport = RecordingBackgroundTransport([.urlError(.cannotConnectToHost)])
+        let sut = try makeBackgroundClient(
+            mode: .contractFixture,
+            transport: transport,
+            policy: policy
+        )
+        let outcome = await sut.generate(
+            context: try backgroundContext(),
+            rawStyleID: "clean-white",
+            requestID: try RequestID("verified-fixed-recovery")
+        )
+        guard case .failed(_, let failure) = outcome else {
+            Issue.record("expected transport failure")
+            return
+        }
+        #expect(failure.reason == .transport)
+        #expect(failure.recovery.fixedBackground == .licenseConfirmed(descriptor))
+        #expect(failure.recovery.fixedBackground.isSelectable)
+        #expect(failure.recovery.fixedBackground.descriptor == descriptor)
     }
 
     @Test func cancellationIsBoundedAndCannotCommitLateResponseBytes() async throws {
@@ -398,7 +491,33 @@ struct BackgroundGenerationClientTests {
         )
     }
 
-    @Test func liveUnavailableMakesZeroRequestAndNeverFallsBackToFixture() async throws {
+    @Test func injectedLiveAvailabilityExercisesLiveRequestPath() async throws {
+        let image = try opaqueBackgroundPNG()
+        let transport = RecordingBackgroundTransport([
+            .response(.init(statusCode: 200, contentType: "image/png", body: image))
+        ])
+        let sut = try makeBackgroundClient(
+            mode: .live,
+            transport: transport,
+            endpointAvailability: .available
+        )
+        let outcome = await sut.generate(
+            context: try backgroundContext(),
+            rawStyleID: "clean-white",
+            requestID: try RequestID("live-available")
+        )
+        guard case .validated(let payload) = outcome else {
+            Issue.record("expected injected live request success")
+            return
+        }
+        #expect(payload.pngBytes == image)
+        let requests = await transport.requestSnapshot()
+        #expect(requests.count == 1)
+        #expect(requests.first?.url?.path == "/api/generate-background")
+        #expect(requests.first?.value(forHTTPHeaderField: "Idempotency-Key") == "live-available")
+    }
+
+    @Test func defaultLiveUnavailableMakesZeroRequestAndNeverFallsBackToFixture() async throws {
         let transport = RecordingBackgroundTransport([
             .response(
                 .init(
@@ -458,7 +577,9 @@ struct BackgroundGenerationClientTests {
 
 private func makeBackgroundClient(
     mode: BackgroundGenerationExecutionMode,
-    transport: any BackgroundGenerationHTTPTransport
+    transport: any BackgroundGenerationHTTPTransport,
+    policy: BackgroundStylePolicy = .init(),
+    endpointAvailability: EndpointAvailability = BackendEndpoint.generateBackground.availability
 ) throws -> BackgroundGenerationClient {
     let configuration = URLSessionConfiguration.ephemeral
     configuration.urlCache = nil
@@ -471,7 +592,19 @@ private func makeBackgroundClient(
     return BackgroundGenerationClient(
         backend: backend,
         mode: mode,
-        transport: transport
+        transport: transport,
+        policy: policy,
+        endpointAvailability: endpointAvailability
+    )
+}
+
+private func verifiedFixedBackgroundDescriptor() throws -> BackgroundFixedAssetDescriptor {
+    try BackgroundFixedAssetDescriptor(
+        assetID: "fixed-background-clean-white-v1",
+        repositoryRelativePath: "Fixtures/Approved/fixed-background-clean-white-v1.png",
+        sha256: String(repeating: "a", count: 64),
+        licenseEvidenceID: "licenses/fixed-background-clean-white-v1",
+        inventoryEvidenceID: "asset-inventory/fixed-background-clean-white-v1"
     )
 }
 

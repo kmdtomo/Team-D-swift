@@ -230,6 +230,7 @@ public actor BackgroundGenerationClient {
     private let mode: BackgroundGenerationExecutionMode
     private let transport: any BackgroundGenerationHTTPTransport
     private let policy: BackgroundStylePolicy
+    private let endpointAvailability: EndpointAvailability
     private let decoder: JSONDecoder
     private var generation: UInt64 = 0
     private var active: ActiveRequest?
@@ -240,12 +241,14 @@ public actor BackgroundGenerationClient {
         mode: BackgroundGenerationExecutionMode,
         transport: any BackgroundGenerationHTTPTransport = URLSessionBackgroundGenerationTransport(),
         policy: BackgroundStylePolicy = .init(),
+        endpointAvailability: EndpointAvailability = BackendEndpoint.generateBackground.availability,
         decoder: JSONDecoder = .init()
     ) {
         self.backend = backend
         self.mode = mode
         self.transport = transport
         self.policy = policy
+        self.endpointAvailability = endpointAvailability
         self.decoder = decoder
         state = .idle(mode)
     }
@@ -307,7 +310,7 @@ public actor BackgroundGenerationClient {
 
         guard
             mode == .contractFixture
-                || BackendEndpoint.generateBackground.availability == .available
+                || endpointAvailability == .available
         else {
             let failure = BackgroundGenerationFailure(
                 reason: .liveEndpointUnavailable,
@@ -416,14 +419,14 @@ public actor BackgroundGenerationClient {
             guard documentedErrorStatuses.contains(response.statusCode) else {
                 return recordFailure(
                     .unexpectedStatus(response.statusCode),
-                    retry: .sameRequestIdentity,
+                    retry: .disallowed,
                     descriptor: descriptor
                 )
             }
             guard Self.normalizedContentType(response.contentType) == "application/json" else {
                 return recordFailure(
                     .invalidContentType,
-                    retry: .sameRequestIdentity,
+                    retry: .disallowed,
                     descriptor: descriptor
                 )
             }
@@ -432,7 +435,7 @@ public actor BackgroundGenerationClient {
             else {
                 return recordFailure(
                     .invalidProviderError(response.statusCode),
-                    retry: .sameRequestIdentity,
+                    retry: .disallowed,
                     descriptor: descriptor
                 )
             }
@@ -446,7 +449,7 @@ public actor BackgroundGenerationClient {
         guard Self.normalizedContentType(response.contentType) == "image/png" else {
             return recordFailure(
                 .invalidContentType,
-                retry: .sameRequestIdentity,
+                retry: .disallowed,
                 descriptor: descriptor
             )
         }

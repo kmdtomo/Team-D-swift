@@ -52,13 +52,117 @@ public enum BackgroundFixedAssetUnavailability: Equatable, Sendable {
     case noLicenseConfirmedRepositoryAsset
 }
 
+public enum BackgroundFixedAssetDescriptorError: Error, Equatable, Sendable {
+    case invalidAssetID
+    case invalidRepositoryRelativePath
+    case invalidSHA256
+    case invalidLicenseEvidenceID
+    case invalidInventoryEvidenceID
+}
+
+/// Metadata required before a repository asset can become a selectable fixed
+/// fallback. The descriptor carries no image bytes and does not itself add an
+/// asset to the repository or its license inventory.
+public struct BackgroundFixedAssetDescriptor: Equatable, Sendable {
+    public let assetID: String
+    public let repositoryRelativePath: String
+    public let sha256: String
+    public let licenseEvidenceID: String
+    public let inventoryEvidenceID: String
+
+    public init(
+        assetID: String,
+        repositoryRelativePath: String,
+        sha256: String,
+        licenseEvidenceID: String,
+        inventoryEvidenceID: String
+    ) throws {
+        guard Self.isStableReference(assetID, maximumLength: 96) else {
+            throw BackgroundFixedAssetDescriptorError.invalidAssetID
+        }
+        guard Self.isSafeRepositoryImagePath(repositoryRelativePath) else {
+            throw BackgroundFixedAssetDescriptorError.invalidRepositoryRelativePath
+        }
+        guard sha256.count == 64,
+            sha256.allSatisfy({ "0123456789abcdef".contains($0) })
+        else {
+            throw BackgroundFixedAssetDescriptorError.invalidSHA256
+        }
+        guard Self.isStableReference(licenseEvidenceID, maximumLength: 256) else {
+            throw BackgroundFixedAssetDescriptorError.invalidLicenseEvidenceID
+        }
+        guard Self.isStableReference(inventoryEvidenceID, maximumLength: 256) else {
+            throw BackgroundFixedAssetDescriptorError.invalidInventoryEvidenceID
+        }
+        self.assetID = assetID
+        self.repositoryRelativePath = repositoryRelativePath
+        self.sha256 = sha256
+        self.licenseEvidenceID = licenseEvidenceID
+        self.inventoryEvidenceID = inventoryEvidenceID
+    }
+
+    private static func isStableReference(_ value: String, maximumLength: Int) -> Bool {
+        guard (1...maximumLength).contains(value.count),
+            let first = value.first,
+            first.isASCII,
+            first.isLetter || first.isNumber
+        else {
+            return false
+        }
+        return value.allSatisfy {
+            $0.isASCII && ($0.isLetter || $0.isNumber || "._:/#-".contains($0))
+        }
+    }
+
+    private static func isSafeRepositoryImagePath(_ value: String) -> Bool {
+        guard !value.isEmpty,
+            value.count <= 512,
+            !value.hasPrefix("/"),
+            !value.hasPrefix("./"),
+            !value.contains("\\"),
+            !value.contains("//"),
+            value.allSatisfy({
+                $0.isASCII && ($0.isLetter || $0.isNumber || "._-/".contains($0))
+            })
+        else {
+            return false
+        }
+        let components = value.split(separator: "/", omittingEmptySubsequences: false)
+        guard !components.isEmpty,
+            components.allSatisfy({ !$0.isEmpty && $0 != "." && $0 != ".." })
+        else {
+            return false
+        }
+        guard let filename = components.last,
+            let separator = filename.lastIndex(of: ".")
+        else {
+            return false
+        }
+        let fileExtension = filename[filename.index(after: separator)...].lowercased()
+        return ["png", "jpg", "jpeg"].contains(fileExtension)
+    }
+}
+
 public enum BackgroundFixedAssetSelection: Equatable, Sendable {
     case unavailable(BackgroundFixedAssetUnavailability)
+    case licenseConfirmed(BackgroundFixedAssetDescriptor)
 
     public static let repositoryCatalog: BackgroundFixedAssetSelection =
         .unavailable(.noLicenseConfirmedRepositoryAsset)
 
-    public var isSelectable: Bool { false }
+    public var isSelectable: Bool {
+        switch self {
+        case .unavailable: false
+        case .licenseConfirmed: true
+        }
+    }
+
+    public var descriptor: BackgroundFixedAssetDescriptor? {
+        switch self {
+        case .unavailable: nil
+        case .licenseConfirmed(let descriptor): descriptor
+        }
+    }
 }
 
 public struct BackgroundStylePolicy: Equatable, Sendable {

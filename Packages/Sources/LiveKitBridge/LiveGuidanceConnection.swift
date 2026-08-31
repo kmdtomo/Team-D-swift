@@ -12,12 +12,14 @@ public enum LiveGuidanceProductionBlocker: Error, Equatable, Sendable {
     case liveKitSDKNotLinked
     case appProducedVideoPublishHandoffUnavailable
     case agentGuidancePushUnavailable
+    case reliableDataPublishUnavailable
 }
 
 public enum LiveGuidanceTransportError: Error, Equatable, Sendable {
     case unavailable(LiveGuidanceProductionBlocker)
     case connectionFailed
     case appProducedVideoPublishFailed
+    case reliableDataPublishFailed
     case cancelled
 }
 
@@ -98,6 +100,20 @@ public struct LiveGuidanceVideoPublishRequest: Equatable, Sendable {
     }
 }
 
+public struct LiveGuidanceReliableDataPublishRequest: Equatable, Sendable {
+    public let sessionID: String
+    public let generation: UInt64
+    public let topic: String
+    public let payload: Data
+
+    public init(sessionID: String, generation: UInt64, topic: String, payload: Data) {
+        self.sessionID = sessionID
+        self.generation = generation
+        self.topic = topic
+        self.payload = payload
+    }
+}
+
 /// A LiveKit adapter may join one Room and request the app-produced track, but
 /// it must not open a camera or start an HTTP polling loop.
 public protocol LiveGuidanceRoomTransporting: Sendable {
@@ -107,9 +123,24 @@ public protocol LiveGuidanceRoomTransporting: Sendable {
         _ request: LiveGuidanceVideoPublishRequest,
         in room: UUID
     ) async throws
+    func publishReliableData(
+        _ request: LiveGuidanceReliableDataPublishRequest,
+        in room: UUID
+    ) async throws
 }
 
-/// Truthful production default while the pinned LiveKit Swift SDK is absent.
+public extension LiveGuidanceRoomTransporting {
+    func publishReliableData(
+        _ request: LiveGuidanceReliableDataPublishRequest,
+        in room: UUID
+    ) async throws {
+        _ = request
+        _ = room
+        throw LiveGuidanceTransportError.unavailable(.reliableDataPublishUnavailable)
+    }
+}
+
+/// Truthful fallback when a composition has no usable LiveKit transport.
 public struct UnavailableLiveGuidanceRoomTransport: LiveGuidanceRoomTransporting {
     public init() {}
 
@@ -161,6 +192,15 @@ public enum LiveGuidanceVideoPublishState: Equatable, Sendable {
     case stopped
     case failed
     case unavailable(LiveGuidanceProductionBlocker)
+}
+
+public enum LiveGuidanceCaptureContextPublishState: Equatable, Sendable {
+    case pending(UInt64)
+    case publishing(UInt64)
+    case published(UInt64)
+    case failed(UInt64)
+    case unavailable(UInt64, LiveGuidanceProductionBlocker)
+    case stopped(UInt64)
 }
 
 public enum LiveGuidancePacketRejection: Equatable, Sendable {
@@ -217,6 +257,7 @@ public struct LiveGuidanceConnectionSnapshot: Equatable, Sendable {
     public let lastGuidanceRejection: LiveGuidancePacketRejection?
     public let opaqueReliablePacketCount: UInt64
     public let videoPublishState: LiveGuidanceVideoPublishState
+    public let captureContextPublishState: LiveGuidanceCaptureContextPublishState
     public let latencySampleCount: UInt64
     public let guidanceDeliveryLatencyP95Milliseconds: Int64?
 }
@@ -232,6 +273,11 @@ public actor LiveGuidanceConnection {
     private let receiver: any LiveGuidanceConnectionOutputReceiving
     private let makeRequestID: @Sendable () -> UUID
     private let decoder = JSONDecoder()
+    private let contextEncoder: JSONEncoder = {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        return encoder
+    }()
 
     private var filter: GuidanceFilterState
     private var phase: LiveGuidanceConnectionPhase = .disconnected
@@ -249,6 +295,11 @@ public actor LiveGuidanceConnection {
     private var reliableCount: UInt64 = 0
     private var deliveryLatencies: [Int64] = []
     private var latencySampleCount: UInt64 = 0
+    private var latestCaptureContext: CaptureContextV1
+    private var pendingCaptureContext: CaptureContextV1?
+    private var captureContextPublishTask: Task<Void, Never>?
+    private var captureContextPublishAttempt: UInt64 = 0
+    private var captureContextPublishState: LiveGuidanceCaptureContextPublishState
 
     public init(
         sessionID: String,
@@ -264,12 +315,22 @@ public actor LiveGuidanceConnection {
         self.clock = clock
         self.receiver = receiver
         self.makeRequestID = makeRequestID
-        let sessionID = try LiveKitTokenRequest(sessionId: sessionID).sessionId
+        let validatedSessionID = try LiveKitTokenRequest(sessionId: sessionID).sessionId
         filter = try GuidanceFilterState(
-            sessionId: sessionID,
+            sessionId: validatedSessionID,
             currentShot: currentShot,
             connection: .disconnected
         )
+        let initialContext = try CaptureContextV1(
+            sessionId: validatedSessionID,
+            revision: 1,
+            shot: currentShot,
+            acceptedShots: [],
+            lastGuidanceSequence: nil
+        )
+        latestCaptureContext = initialContext
+        pendingCaptureContext = initialContext
+        captureContextPublishState = .pending(initialContext.revision)
     }
 
     /// Idempotent during an active request, connection, or leave.
@@ -312,15 +373,56 @@ public actor LiveGuidanceConnection {
         joinTask = nil
         publishTask?.cancel()
         publishTask = nil
+        invalidateCaptureContextPublish()
         packetTasks.forEach { $0.cancel() }
         packetTasks.removeAll()
         let joinedRoom = room
         room = nil
         if let joinedRoom { await transport.leave(joinedRoom) }
-        if generation == leaveGeneration { phase = .disconnected }
+        if generation == leaveGeneration {
+            phase = .disconnected
+            captureContextPublishState = .stopped(latestCaptureContext.revision)
+        }
     }
 
-    public func setCurrentShot(_ shot: Shot) { filter.setCurrentShot(shot) }
+    /// Compatibility entry point for callers that only change the shot. New
+    /// workflow wiring should provide the complete app-owned accepted-slot set.
+    public func setCurrentShot(_ shot: Shot) {
+        queueCaptureContext(
+            currentShot: shot,
+            acceptedShots: Set(latestCaptureContext.acceptedShots),
+            forceNewRevision: false
+        )
+    }
+
+    /// Updates the app-owned workflow context without allowing Agent data to
+    /// accept slots or navigate. At most one send is active and one latest
+    /// snapshot is pending; intermediate updates are replaced.
+    public func updateCaptureContext(
+        currentShot: Shot,
+        acceptedShots: Set<Shot>
+    ) async {
+        queueCaptureContext(
+            currentShot: currentShot,
+            acceptedShots: acceptedShots,
+            forceNewRevision: true
+        )
+    }
+
+    /// Explicit retry after a reliable-send failure. A fresh revision avoids
+    /// replay ambiguity if the previous send reached the Room before failing.
+    public func retryCaptureContextPublish() async {
+        switch captureContextPublishState {
+        case .failed, .unavailable:
+            queueCaptureContext(
+                currentShot: filter.currentShot,
+                acceptedShots: Set(latestCaptureContext.acceptedShots),
+                forceNewRevision: true
+            )
+        case .pending, .publishing, .published, .stopped:
+            break
+        }
+    }
 
     /// Explicit retry entry point. The initial request starts automatically once
     /// Room join succeeds; repeated calls remain idempotent.
@@ -377,6 +479,7 @@ public actor LiveGuidanceConnection {
             lastGuidanceRejection: lastRejection,
             opaqueReliablePacketCount: reliableCount,
             videoPublishState: publishState,
+            captureContextPublishState: captureContextPublishState,
             latencySampleCount: latencySampleCount,
             guidanceDeliveryLatencyP95Milliseconds: latencyP95()
         )
@@ -471,9 +574,21 @@ public actor LiveGuidanceConnection {
         phase = .connected
         filter.transitionConnection(to: .connected)
         hasConnected = true
+        if kind == .reconnect {
+            queueCaptureContext(
+                currentShot: filter.currentShot,
+                acceptedShots: Set(latestCaptureContext.acceptedShots),
+                forceNewRevision: true,
+                startPublish: false
+            )
+        } else if pendingCaptureContext == nil {
+            pendingCaptureContext = latestCaptureContext
+            captureContextPublishState = .pending(latestCaptureContext.revision)
+        }
         startConsumers(joined, sessionID: sessionID,
                        requestID: operationRequestID,
                        generation: operationGeneration)
+        beginCaptureContextPublish()
         beginAppProducedVideoPublish()
     }
 
@@ -604,11 +719,23 @@ public actor LiveGuidanceConnection {
         case .connecting:
             break
         case .connected:
+            let recoveredFromReconnect = phase == .reconnecting
             phase = .connected
             filter.transitionConnection(to: .connected)
+            if recoveredFromReconnect {
+                queueCaptureContext(
+                    currentShot: filter.currentShot,
+                    acceptedShots: Set(latestCaptureContext.acceptedShots),
+                    forceNewRevision: true,
+                    startPublish: false
+                )
+            }
+            beginCaptureContextPublish()
         case .reconnecting:
             phase = .reconnecting
             filter.transitionConnection(to: .reconnecting)
+            invalidateCaptureContextPublish()
+            captureContextPublishState = .pending(latestCaptureContext.revision)
         case .disconnected:
             await transportEnded(
                 .transportDisconnected,
@@ -653,6 +780,8 @@ public actor LiveGuidanceConnection {
         phase = .failed(failure)
         publishTask?.cancel()
         publishTask = nil
+        invalidateCaptureContextPublish()
+        captureContextPublishState = .pending(latestCaptureContext.revision)
         packetTasks.forEach { $0.cancel() }
         packetTasks.removeAll()
         await transport.leave(joinedRoom)
@@ -663,6 +792,167 @@ public actor LiveGuidanceConnection {
         publishTask = Task { [weak self] in
             await self?.requestAppProducedVideoPublish()
         }
+    }
+
+    private func queueCaptureContext(
+        currentShot: Shot,
+        acceptedShots: Set<Shot>,
+        forceNewRevision: Bool,
+        startPublish: Bool = true
+    ) {
+        filter.setCurrentShot(currentShot)
+        let canonicalAcceptedShots = CaptureContextV1.canonicalAcceptedShots(from: acceptedShots)
+        let contentChanged = latestCaptureContext.shot != currentShot ||
+            latestCaptureContext.acceptedShots != canonicalAcceptedShots ||
+            latestCaptureContext.lastGuidanceSequence != filter.lastAcceptedSequence
+        var enqueuedNewRevision = false
+
+        if forceNewRevision || contentChanged {
+            guard latestCaptureContext.revision < UInt64.max else {
+                captureContextPublishState = .failed(latestCaptureContext.revision)
+                return
+            }
+            do {
+                let context = try CaptureContextV1(
+                    sessionId: filter.currentSessionId,
+                    revision: latestCaptureContext.revision + 1,
+                    shot: currentShot,
+                    acceptedShots: canonicalAcceptedShots,
+                    lastGuidanceSequence: filter.lastAcceptedSequence
+                )
+                latestCaptureContext = context
+                pendingCaptureContext = context
+                captureContextPublishState = .pending(context.revision)
+                enqueuedNewRevision = true
+            } catch {
+                captureContextPublishState = .failed(latestCaptureContext.revision)
+                return
+            }
+        }
+
+        guard startPublish else { return }
+        switch captureContextPublishState {
+        case .failed, .unavailable where !enqueuedNewRevision:
+            return
+        default:
+            beginCaptureContextPublish()
+        }
+    }
+
+    private func beginCaptureContextPublish() {
+        guard captureContextPublishTask == nil,
+              phase == .connected,
+              let joinedRoom = room,
+              let connectionRequestID = requestID,
+              let context = pendingCaptureContext
+        else { return }
+
+        let payload: Data
+        do {
+            payload = try contextEncoder.encode(context)
+        } catch {
+            captureContextPublishState = .failed(context.revision)
+            return
+        }
+
+        pendingCaptureContext = nil
+        captureContextPublishAttempt &+= 1
+        if captureContextPublishAttempt == 0 { captureContextPublishAttempt = 1 }
+        let attempt = captureContextPublishAttempt
+        let operationGeneration = generation
+        let sessionID = filter.currentSessionId
+        captureContextPublishState = .publishing(context.revision)
+        captureContextPublishTask = Task { [weak self] in
+            await self?.performCaptureContextPublish(
+                context: context,
+                payload: payload,
+                room: joinedRoom,
+                sessionID: sessionID,
+                requestID: connectionRequestID,
+                generation: operationGeneration,
+                attempt: attempt
+            )
+        }
+    }
+
+    private func performCaptureContextPublish(
+        context: CaptureContextV1,
+        payload: Data,
+        room joinedRoom: UUID,
+        sessionID: String,
+        requestID operationRequestID: UUID,
+        generation operationGeneration: UInt64,
+        attempt: UInt64
+    ) async {
+        do {
+            try await transport.publishReliableData(
+                .init(
+                    sessionID: sessionID,
+                    generation: operationGeneration,
+                    topic: CaptureContextContract.version1Topic,
+                    payload: payload
+                ),
+                in: joinedRoom
+            )
+            guard isCurrentCaptureContextPublish(
+                room: joinedRoom,
+                sessionID: sessionID,
+                requestID: operationRequestID,
+                generation: operationGeneration,
+                attempt: attempt
+            ) else { return }
+            captureContextPublishTask = nil
+            if let pendingCaptureContext {
+                captureContextPublishState = .pending(pendingCaptureContext.revision)
+                beginCaptureContextPublish()
+            } else {
+                captureContextPublishState = .published(context.revision)
+            }
+        } catch {
+            guard isCurrentCaptureContextPublish(
+                room: joinedRoom,
+                sessionID: sessionID,
+                requestID: operationRequestID,
+                generation: operationGeneration,
+                attempt: attempt
+            ) else { return }
+            captureContextPublishTask = nil
+            if let pendingCaptureContext {
+                captureContextPublishState = .pending(pendingCaptureContext.revision)
+                beginCaptureContextPublish()
+                return
+            }
+            self.pendingCaptureContext = context
+            if let unavailable = blocker(from: error) {
+                captureContextPublishState = .unavailable(context.revision, unavailable)
+            } else {
+                captureContextPublishState = .failed(context.revision)
+            }
+        }
+    }
+
+    private func invalidateCaptureContextPublish() {
+        captureContextPublishAttempt &+= 1
+        if captureContextPublishAttempt == 0 { captureContextPublishAttempt = 1 }
+        captureContextPublishTask?.cancel()
+        captureContextPublishTask = nil
+    }
+
+    private func isCurrentCaptureContextPublish(
+        room joinedRoom: UUID,
+        sessionID: String,
+        requestID operationRequestID: UUID,
+        generation operationGeneration: UInt64,
+        attempt: UInt64
+    ) -> Bool {
+        captureContextPublishAttempt == attempt &&
+            phase == .connected &&
+            isCurrent(
+                generation: operationGeneration,
+                requestID: operationRequestID,
+                sessionID: sessionID,
+                room: joinedRoom
+            )
     }
 
     private func recordLatency(_ latency: Int64) {

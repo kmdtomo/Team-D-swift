@@ -1,4 +1,5 @@
 import CaptureKit
+import ContractKit
 import Foundation
 
 /// Versioned topics are preferred because LiveKit Swift's Room delegate exposes
@@ -466,6 +467,34 @@ private actor LiveKitRoomRuntime {
         }
     }
 
+    func publishReliableData(_ request: LiveGuidanceReliableDataPublishRequest) async throws {
+        guard !isClosed,
+              request.sessionID == sessionID,
+              request.generation == generation,
+              request.topic == CaptureContextContract.version1Topic,
+              !request.payload.isEmpty
+        else { throw LiveGuidanceTransportError.cancelled }
+
+        do {
+            try Task.checkCancellation()
+            try await room.localParticipant.publish(
+                data: request.payload,
+                options: DataPublishOptions(
+                    topic: CaptureContextContract.version1Topic,
+                    reliable: true
+                )
+            )
+            try Task.checkCancellation()
+            guard !isClosed else { throw LiveGuidanceTransportError.cancelled }
+        } catch is CancellationError {
+            throw LiveGuidanceTransportError.cancelled
+        } catch let error as LiveGuidanceTransportError {
+            throw error
+        } catch {
+            throw LiveGuidanceTransportError.reliableDataPublishFailed
+        }
+    }
+
     func offer(_ frame: AppProducedVideoFrame) async {
         guard !isClosed, let frameCoordinator else { return }
         await frameCoordinator.offer(frame)
@@ -548,6 +577,14 @@ public actor LiveKitRoomTransport: LiveGuidanceRoomTransporting {
     ) async throws {
         guard let runtime = rooms[room] else { throw LiveGuidanceTransportError.cancelled }
         try await runtime.requestVideoPublish(request)
+    }
+
+    public func publishReliableData(
+        _ request: LiveGuidanceReliableDataPublishRequest,
+        in room: UUID
+    ) async throws {
+        guard let runtime = rooms[room] else { throw LiveGuidanceTransportError.cancelled }
+        try await runtime.publishReliableData(request)
     }
 
     @discardableResult

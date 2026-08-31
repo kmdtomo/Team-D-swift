@@ -2,14 +2,17 @@
 
 最終更新: 2026-09-01
 
-参照元snapshot: [`neko-jpg/Team-D@44065d41e8906d34e5d8e11d7cd4cc14b25d17f2`](https://github.com/neko-jpg/Team-D/tree/44065d41e8906d34e5d8e11d7cd4cc14b25d17f2)
+共有backend参照元: [`neko-jpg/Team-D`](https://github.com/neko-jpg/Team-D)
+
+初期調査commit（履歴・v1契約の出典のみ）: [`neko-jpg/Team-D@44065d41e8906d34e5d8e11d7cd4cc14b25d17f2`](https://github.com/neko-jpg/Team-D/tree/44065d41e8906d34e5d8e11d7cd4cc14b25d17f2)
 
 ## 0. 文書の位置づけ
 
 - 本文書はSwift/iPhone版の機能要件、非機能要件、受け入れ条件の正本である。
 - [`task.md`](./task.md)は作業レーン、着手に必要な成果物、統合・最終受け入れの依存を定義する。チェックボックスは「タスク全体のproduction実装と対応test codeがcommit済みで、1回の限定的なsource reviewにP0がない」ことを表す。build/test/live/実機および最終受け入れは別の作業状態と証跡で追跡し、チェックボックスを後続タスクの一律な着手許可には使わない。本文書の要件を上書きしない。
 - 参照元の`requirements.md`、`architecture.md`、OpenSpecは調査根拠であり、SwiftリポジトリにコピーしたりOpenSpec運用を導入したりしない。
-- 参照元の`main`が更新されても自動同期しない。要件、API契約、fixture、backend availabilityの差分を確認し、利用者の明示的な承認後にsnapshotと本文書を更新する。
+- backend関連の計画・実装・review・live検証の開始時は、参照元のリモートdefault branchを読み取り専用で更新確認し、確認したcommit SHAと時刻を作業・検証証跡に記録する。参照元の現在の実装状況とavailabilityは永続的な特定SHAへ固定しない。
+- 最新backendの変更は、Swift版の機能要件やversion付きwire contractを暗黙に上書きしない。契約・挙動・availabilityの差分を明示し、必要な場合は影響範囲を限定した同期作業で要件、schema、golden、fixture、taskを更新する。過去のcommit SHAは契約・fixture・監査の再現用出典として保持する。
 - 矛盾がある場合は、利用者の最新の明示指示、本文書、version固定済みwire contract、`task.md`の順に優先し、独断で機能要件を変えない。
 
 ## 1. プロダクトの目的
@@ -64,6 +67,7 @@
 - 撮影セッション開始時に短命tokenを取得し、LiveKit Roomへ接続してカメラtrackをpublishする。
 - 意味判定はstateful Agentが最新frameを選択し、同時推論を1件に限る。定期HTTP upload/polling、全frame保存、30fps全件推論を行わない。
 - Agentは有限な`GuidanceEvent`をLiveKit data packetまたはRPCでpushする。別session、別shot、既読以下sequence、期限切れのeventは破棄する。
+- アプリはRoom接続後、アプリ所有の現在shot・受理済みslot・最終受理Guidance sequenceをversion付きreliable contextとしてAgentへ送る。shot受理後と再接続後に同期し、別shotの推論結果は表示しない。contextは画像、自由文、confidence、画面遷移commandを含まない。
 - 明るさ、ブレ、安定性はApple標準frameworkで端末内判定し、衣類の収まり、距離、中央寄せ、表裏、タグへの移動はAgent画像AIの助言とする。
 - 主助言は同時に1件だけ表示し、AI自由文、model名、confidence値をUIに表示しない。
 - `READY`は助言であり撮影許可ではない。カメラが撮影可能で多重capture処理中でない限り、`READY`でなくても手動撮影できる。
@@ -77,6 +81,7 @@
 ### R4. 4枚固定フロー
 
 - 必須順序は`front → back → tag → measurement`とし、現在位置と受理済み状態を常に表示する。
+- `front/back/tag`は、手動撮影→撮影後AI判定→アプリによるslot受理→次shotのcontext送信の順でのみ進む。次shotの助言はcontext同期後の同一shot eventだけを表示する。
 - 品質不良、誤撮影種別、衣類の欠け、読めないタグは同じ工程で理由付き撮り直しにする。
 - 撮り直し、再接続、provider失敗で他の受理済みslotを失わない。
 - `measurement`写真は採寸専用とし、出品画像、背景分離、背景生成へ使用しない。
@@ -92,7 +97,7 @@
 - 補正済み画像へ対するAI提案は`lengthStart`, `lengthEnd`, `widthStart`, `widthEnd`の4点だけとし、cm値や画面遷移を返さない。
 - 着丈は背面の襟中央付け根から裾中央、身幅は左右の脇下間の平置き直線距離とし、胸囲へ2倍しない。
 - 4端点は補正・微調整可能とし、移動ごとに0.1cm単位で再計算し、既存の承認を解除する。
-- 端点が画像外または衣類領域から大きく外れる場合は`ENDPOINTS_INVALID`とし承認を無効にする。着丈20〜100cm、身幅20〜80cmの範囲外は警告後の再確認を要求する。
+- 端点が画像外の場合、または補正画像のpixel座標で衣類polygonの外側へ補正画像短辺の2.0%を超えて離れる場合は`ENDPOINTS_INVALID`とし承認を無効にする。polygon内、境界上、および境界から短辺の2.0%以内（ちょうど2.0%を含む）は有効とする。着丈20〜100cm、身幅20〜80cmの範囲外は警告後の再確認を要求する。
 - 初期状態は必ず未承認とし、利用者が2本の測定線と数値を明示承認した場合だけ`approved_cv`にする。
 - CV採寸が完了できない場合は、撮り直しまたは着丈・身幅の手入力を提示する。手入力でも衣類全体が写った4枚目は必須であり、明示承認後に`approved_manual`とする。
 - デモ対象Tシャツでは、利用者補正・承認後の着丈・身幅をメジャー実測値に対して各±1.0cm以内とする。自動ドラフト自体の誤差は製品受け入れ条件にしない。
@@ -108,6 +113,7 @@
 - 背景分離に使うのは元の`front`1枚だけとし、共有backend経由でrembg/BiRefNetからmask-only PNGを取得する。
 - 合成画像の商品領域RGBは元の`front`画像だけから取得する。生成AIによる商品の再描画、レタッチ、色・形・傷・汚れの改変を行わない。
 - Core ImageまたはCore Graphicsで色空間、orientation、寸法を正規化し、maskにより元`front`をforegroundとして合成する。
+- 有効なmask取得後は、生成背景の成否に依存せず、元`front`RGBとmask alphaだけから透明cutoutを作り、透過が識別できる固定のcheckerboardまたは高contrast背景上で表示する。この中間表示は承認・保存対象にしない。
 - maskが空、全面、寸法不一致、非決定的な場合は合成画像を承認候補にしない。
 
 ### R8. 比較・明示承認・保存
@@ -150,14 +156,15 @@
 |---|---|---|
 | `GET /api/health` | backend稼働状態。secretを含めない | 実装済み |
 | `POST /api/livekit-token` | requestはstrictな`{sessionId}`。responseは`token`, `participantIdentity`, `roomName`, `expiresAt`, `livekitUrl` | 実装済み |
-| LiveKit Agent | camera track限定購読、capacity 1の最新frame、同時推論1件、Guidance push | transport coreは実装済み。実vision providerとpush配線は未実装 |
-| `POST /api/analyze-shot` | 高解像度写真＋要求shot → `ShotAssessment` | 未実装 |
-| `POST /api/suggest-measurement-points` | 補正済みmeasurement → 4つの`NormalizedPoint` | 未実装 |
+| LiveKit Agent | camera track限定購読、capacity 1の最新frame、同時推論1件、Guidance push | 最新確認時点でprovider→data publishを実装済み。topicなしpacketは閉じたpayload形状で互換処理する。app→Agentの`capture_context`受信から`AgentRuntime.set_shot()`への接続は未実装 |
+| `POST /api/analyze-shot` | 高解像度写真＋要求shot → `ShotAssessment` | 最新確認時点で実装済み。現行wireの`file` partと`detail` error envelopeを明示compatibility contractで扱う |
+| `POST /api/suggest-measurement-points` | 補正済みmeasurement → 4つの`NormalizedPoint` | 最新確認時点でroute実装済み。共有環境へのdeployとprotected contract smokeは別gate |
 | `POST /api/generate-background` | 許可style ID/テキスト → 商品なし背景 | 未実装 |
-| `POST /api/remove-background` | 元`front` → 同寸法mask-only PNG | 未実装 |
+| `POST /api/remove-background` | 元`front` → 同寸法mask-only PNG | 最新確認時点でroute実装済み。rembgを含む共有環境deployとprotected contract smokeは別gate |
 
 - tokenの既定TTLは90秒、hard maxは300秒。camera publish/data publishを許可し、subscribeは許可しない。
 - 未実装backend surfaceはSwift repo内に代替実装しない。fixtureでclient開発を進めてもlive完了としない。
+- 現行backendは2026-09-01 02:28 JSTにリモートdefault branchを読み取り専用で再確認し、commit `a25a8542664b4bd3bfe3ff00171ea56cd373966c`でAgent push、`analyze-shot`、`suggest-measurement-points`、`remove-background`のroute実装を確認した。`generate-background`とapp→Agent `capture_context`受信handlerは確認できなかった。このSHAは確認証跡であり、現在のbackend正本を固定しない。凍結済みHTTP v1を履歴として保持し、現行wire差分は[`docs/contracts/backend-current-compatibility.md`](./docs/contracts/backend-current-compatibility.md)の明示互換層だけで吸収する。
 - 実装開始前にversion付きJSON Schema/OpenAPI、content type、error envelope、timeout、golden payloadを固定する。
 
 ## 6. fixture要件
@@ -237,6 +244,7 @@
 - **AC-CAP-004:** 別session/shot、逆順、期限切れeventで助言や撮影工程が巻き戻らない。
 - **AC-CAP-005:** `READY`以外でも手動撮影でき、撮影原本にガイドやUIが含まれない。
 - **AC-CAP-006:** `front/back/tag`の誤りや品質不良は理由付き撮り直しになり、他の受理済みslotは保持される。
+- **AC-CAP-007:** `front/back/tag`受理後と再接続後にアプリ所有の現在shot・受理済みslot・最終sequenceがreliable同期され、次に表示されるAI助言は同期後の同一shotに限定される。
 - **AC-FLOW-001:** `1/4 front → 2/4 back → 3/4 tag → 4/4 measurement`が常に明示され、順序を飛ばさない。
 - **AC-MEAS-001:** 採寸写真1枚から着丈・身幅の4端点と数値が提案され、利用者が補正・明示承認できる。
 - **AC-MEAS-002:** 自動解析失敗時に撮り直しと手入力が提示され、自動成功に偽装されない。
@@ -245,6 +253,7 @@
 - **AC-EDIT-001:** `front`だけが背景分離され、`back/tag/measurement`は背景処理の入力にならない。
 - **AC-EDIT-002:** 背景生成APIには許可styleのテキストだけが送信され、商品画像は送信されない。
 - **AC-EDIT-003:** 最終合成画像の商品領域RGBが元`front`画像とpixel単位で一致する。
+- **AC-EDIT-004:** 有効なmaskが得られたら、元`front`RGBとmask alphaだけから作った透明cutoutが生成背景より先に画面で確認でき、不正maskでは表示・承認・保存できない。
 - **AC-APPROVAL-001:** 採寸、元/合成画像は初期未承認で、利用者の独立した明示操作だけが承認になる。
 - **AC-DATA-001:** セッション終了後に承認済み出力以外の画像、mask、判定、採寸、中間生成物が残らない。
 - **AC-MODE-001:** fixtureモードは開始から保存spyまで決定的に完走し、live障害時にfixtureへ暗黙切替しない。

@@ -57,19 +57,59 @@ public struct MeasurementQuadrilateral: Equatable, Sendable {
     }
 
     public init?(ordering points: [MeasurementPixelPoint]) {
-        guard points.count == 4, points.allSatisfy(\.isFinite) else { return nil }
-        let byVerticalPosition = points.sorted {
-            if abs($0.y - $1.y) > 0.000_001 { return $0.y < $1.y }
-            return $0.x < $1.x
-        }
-        let top = byVerticalPosition.prefix(2).sorted { $0.x < $1.x }
-        let bottom = byVerticalPosition.suffix(2).sorted { $0.x < $1.x }
-        self.init(
-            topLeft: top[0],
-            topRight: top[1],
-            bottomRight: bottom[1],
-            bottomLeft: bottom[0]
+        guard points.count == 4,
+              points.allSatisfy(\.isFinite),
+              Set(points).count == 4 else { return nil }
+
+        let center = MeasurementPixelPoint(
+            x: points.map(\.x).reduce(0, +) / 4,
+            y: points.map(\.y).reduce(0, +) / 4
         )
+        let clockwise = points.sorted {
+            let lhsAngle = atan2($0.y - center.y, $0.x - center.x)
+            let rhsAngle = atan2($1.y - center.y, $1.x - center.x)
+            if abs(lhsAngle - rhsAngle) > 0.000_001 { return lhsAngle < rhsAngle }
+            return distance($0, center) < distance($1, center)
+        }
+        guard Self.isStrictlyConvex(clockwise) else { return nil }
+
+        // Top-left-origin image coordinates make TL -> TR -> BR -> BL a
+        // clockwise winding. Rotate the winding to the smallest x+y corner;
+        // y then x make the diamond-shaped tie deterministic.
+        let start = clockwise.indices.min {
+            let lhs = clockwise[$0]
+            let rhs = clockwise[$1]
+            let lhsSum = lhs.x + lhs.y
+            let rhsSum = rhs.x + rhs.y
+            if abs(lhsSum - rhsSum) > 0.000_001 { return lhsSum < rhsSum }
+            if abs(lhs.y - rhs.y) > 0.000_001 { return lhs.y < rhs.y }
+            return lhs.x < rhs.x
+        } ?? 0
+        let ordered = (0..<4).map { clockwise[(start + $0) % 4] }
+        self.init(
+            topLeft: ordered[0],
+            topRight: ordered[1],
+            bottomRight: ordered[2],
+            bottomLeft: ordered[3]
+        )
+    }
+
+    private static func isStrictlyConvex(_ points: [MeasurementPixelPoint]) -> Bool {
+        var winding: Double?
+        for index in points.indices {
+            let first = points[index]
+            let second = points[(index + 1) % points.count]
+            let third = points[(index + 2) % points.count]
+            let cross = (second.x - first.x) * (third.y - second.y)
+                - (second.y - first.y) * (third.x - second.x)
+            guard abs(cross) > 0.000_001 else { return false }
+            if let winding {
+                guard (cross > 0) == (winding > 0) else { return false }
+            } else {
+                winding = cross
+            }
+        }
+        return true
     }
 
     public var points: [MeasurementPixelPoint] {

@@ -1,0 +1,102 @@
+name: TeamD iOS CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      run_live_smoke:
+        description: Run the protected shared-backend contract smoke
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: teamd-ios-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  source-gates:
+    name: T19-01 Source gates
+    runs-on: macos-26
+    timeout-minutes: 20
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.2.app/Contents/Developer
+      TEAM_D_CI_ARTIFACTS: ${{ runner.temp }}/teamd-source-gates
+    steps:
+      - name: Check out the requested revision
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Run source, fixture, contract, secret, and license gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$TEAM_D_CI_ARTIFACTS"
+          ./scripts/ci_source_gates.sh 2>&1 | tee "$TEAM_D_CI_ARTIFACTS/source-gates.log"
+          python3 scripts/ci_secret_scan.py --path "$TEAM_D_CI_ARTIFACTS"
+      - name: Preserve source-gate log
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: t19-01-source-gates-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/teamd-source-gates
+          if-no-files-found: error
+          retention-days: 7
+
+  fixture-suite:
+    name: T19-01 Fixture suite
+    needs: source-gates
+    runs-on: macos-26
+    timeout-minutes: 60
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.2.app/Contents/Developer
+      TEAM_D_CI_SCRATCH: ${{ runner.temp }}/teamd-fixture-scratch
+      TEAM_D_CI_ARTIFACTS: ${{ runner.temp }}/teamd-fixture-artifacts
+      TEAM_D_SIMULATOR_DEVICE_TYPE: com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro
+      TEAM_D_SIMULATOR_NAME: iPhone 17 Pro
+      TEAM_D_SIMULATOR_RUNTIME: com.apple.CoreSimulator.SimRuntime.iOS-26-2
+    steps:
+      - name: Check out the requested revision
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Run clean resolve, build, package tests, app tests, and XCUITest
+        run: ./scripts/ci_fixture.sh
+      - name: Preserve fixture-only logs and test results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: t19-01-fixture-results-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/teamd-fixture-artifacts
+          if-no-files-found: error
+          retention-days: 14
+
+  protected-live-smoke:
+    name: T19-01 Protected live smoke
+    if: github.event_name == 'workflow_dispatch' && inputs.run_live_smoke
+    needs:
+      - source-gates
+      - fixture-suite
+    runs-on: macos-26
+    timeout-minutes: 10
+    environment: teamd-ios-live-smoke
+    env:
+      TEAM_D_ALLOW_PROTECTED_LIVE_SMOKE: "1"
+      TEAM_D_LIVE_BACKEND_BASE_URL: ${{ vars.TEAM_D_LIVE_BACKEND_BASE_URL }}
+      TEAM_D_LIVE_SMOKE_BEARER: ${{ secrets.TEAM_D_LIVE_SMOKE_BEARER }}
+    steps:
+      - name: Check out the requested revision
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Run protected health and token contract smoke
+        run: ./scripts/ci_live_smoke.sh

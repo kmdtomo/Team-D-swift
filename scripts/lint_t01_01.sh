@@ -4,8 +4,7 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
 requirements="$repo_root/requirements.md"
 tasks="$repo_root/task.md"
-expected_sha="44065d41e8906d34e5d8e11d7cd4cc14b25d17f2"
-source_url="https://github.com/neko-jpg/Team-D/tree/$expected_sha"
+source_repo="https://github.com/neko-jpg/Team-D"
 
 fail() {
   printf 'T01-01 lint: %s\n' "$1" >&2
@@ -13,29 +12,22 @@ fail() {
 }
 
 for document in "$requirements" "$tasks"; do
-  grep -Fq "$expected_sha" "$document" || fail "missing snapshot SHA in ${document#$repo_root/}"
-  grep -Fq "$source_url" "$document" || fail "missing immutable snapshot URL in ${document#$repo_root/}"
+  grep -Fq "$source_repo" "$document" || fail "missing upstream repository URL in ${document#$repo_root/}"
+  grep -Fq 'default branch' "$document" || fail "missing latest default-branch policy in ${document#$repo_root/}"
+  grep -Fq 'commit SHA' "$document" || fail "missing inspected-commit evidence policy in ${document#$repo_root/}"
+  grep -Fq '時刻' "$document" || fail "missing inspection-time evidence policy in ${document#$repo_root/}"
 done
 
-[[ "$expected_sha" =~ ^[0-9a-f]{40}$ ]] || fail 'snapshot SHA must be 40 lowercase hexadecimal characters'
+grep -Fq '履歴・v1契約・fixtureの出典' "$tasks" || fail 'historical source provenance boundary is missing'
+grep -Fq '過去のcommit SHAは契約・fixture・監査の再現用出典' "$requirements" || fail 'historical evidence retention policy is missing'
 
-while IFS= read -r pinned_sha; do
-  [[ "$pinned_sha" == "$expected_sha" ]] || fail "found a second source snapshot SHA: $pinned_sha"
-done < <((grep -hoE 'https://github\.com/neko-jpg/Team-D/(blob|tree)/[0-9a-f]{40}/[^ )`]+' "$requirements" "$tasks" || true) \
-  | sed -E 's#https://github\.com/neko-jpg/Team-D/(blob|tree)/([0-9a-f]{40})/.*#\2#' \
-  | sort -u)
-
-while IFS= read -r named_pin; do
-  [[ "$named_pin" == "neko-jpg/Team-D@$expected_sha" ]] || fail "found a malformed or second named source pin: $named_pin"
-done < <((grep -hoE 'neko-jpg/Team-D@[A-Za-z0-9._-]+' "$requirements" "$tasks" || true) | sort -u)
-
-if grep -hE 'https://github\.com/neko-jpg/Team-D/(blob|tree)/main/' "$requirements" "$tasks" >/dev/null; then
-  fail 'source blob/tree URLs must not use main'
+if grep -Fq 'このSHA以外の参照元`main`は要件入力にしない' "$requirements" "$tasks" >/dev/null; then
+  fail 'current backend authority must not be restricted to one historical SHA'
 fi
 
-while IFS= read -r pinned_url; do
-  [[ "$pinned_url" == "$source_url" || "$pinned_url" == *"/$expected_sha/"* ]] || fail "pinned source URL does not use the fixed snapshot: $pinned_url"
-done < <(grep -hoE 'https://github\.com/neko-jpg/Team-D/(blob|tree)/[^ )`]+' "$requirements" "$tasks" | sort -u)
+if grep -E '参照元.*[0-9a-f]{40}.*に固定する' "$requirements" "$tasks" >/dev/null; then
+  fail 'current backend authority must not be permanently pinned to a SHA'
+fi
 
 grep -Fq '現行参照元の3slot実装は正本ではない' "$tasks" || fail '3slot non-canonical boundary is missing'
 grep -Fq 'fixtureはXcode/Simulatorで決定的に完走する開発・検証モード' "$tasks" || fail 'fixture/live boundary is missing'
@@ -99,4 +91,4 @@ while IFS= read -r task_id; do
   grep -Fq "**$task_id " "$tasks" || fail "traceability references unknown task $task_id"
 done < <(sed -n '/| AC-/,/^$/p' "$tasks" | grep -oE 'T[0-9]{2}-[0-9]{2}' | sort -u)
 
-printf 'T01-01 lint passed: %s acceptance IDs mapped; snapshot %s verified.\n' "$acceptance_count" "$expected_sha"
+printf 'T01-01 lint passed: %s acceptance IDs mapped; latest-backend tracking policy verified.\n' "$acceptance_count"

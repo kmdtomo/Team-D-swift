@@ -118,8 +118,8 @@ extension AVFoundationCaptureDriver: AVCaptureVideoDataOutputSampleBufferDelegat
         sequence &+= 1; if sequence == 0 { sequence = 1 }
         let time = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
         guard time.isNumeric, let nanos = AnalysisTimestamp.nanoseconds(seconds: time.seconds) else { return }
-        guard let buffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
-        sampleHandler?(AnalysisSample(sequence: sequence, timestampNanoseconds: nanos, frame: AnalysisFrame(pixelBuffer: buffer)))
+        guard let frame = try? AnalysisFrame(sampleBuffer: sampleBuffer) else { return }
+        sampleHandler?(AnalysisSample(sequence: sequence, timestampNanoseconds: nanos, frame: frame))
     }
 }
 

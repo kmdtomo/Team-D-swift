@@ -1,5 +1,17 @@
 import Foundation
 
+public enum OriginalImageImportError: Error, Equatable, Sendable {
+    case emptyData
+    case fileTooLarge(maximumBytes: Int)
+    case unsupportedImage
+}
+
+public enum OriginalImageImportPolicy {
+    /// High-resolution originals remain untouched, while an unexpectedly huge
+    /// provider payload cannot consume the whole session memory budget.
+    public static let maximumBytes = 64 * 1_024 * 1_024
+}
+
 #if canImport(ImageIO)
 import ImageIO
 
@@ -17,18 +29,55 @@ public enum OriginalImageMetadataReader {
             pixelHeight: properties[kCGImagePropertyPixelHeight] as? Int
         )
     }
+
+    public static func importedCapture(
+        for originalFileData: Data,
+        maximumBytes: Int = OriginalImageImportPolicy.maximumBytes
+    ) throws -> ImportedCapture {
+        guard !originalFileData.isEmpty else { throw OriginalImageImportError.emptyData }
+        guard originalFileData.count <= maximumBytes else {
+            throw OriginalImageImportError.fileTooLarge(maximumBytes: maximumBytes)
+        }
+        guard let source = CGImageSourceCreateWithData(originalFileData as CFData, nil),
+              CGImageSourceGetCount(source) > 0,
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let width = properties[kCGImagePropertyPixelWidth] as? Int,
+              let height = properties[kCGImagePropertyPixelHeight] as? Int,
+              width > 0,
+              height > 0
+        else { throw OriginalImageImportError.unsupportedImage }
+        return .init(originalFileData: originalFileData, metadata: metadata(for: originalFileData))
+    }
 }
 #endif
 
 public struct FileOriginalImageImporter: CaptureImporting {
     private let fileURL: URL
-    public init(fileURL: URL) { self.fileURL = fileURL }
+    private let maximumBytes: Int
+    public init(fileURL: URL, maximumBytes: Int = OriginalImageImportPolicy.maximumBytes) {
+        self.fileURL = fileURL
+        self.maximumBytes = maximumBytes
+    }
 
     public func loadOriginal() async throws -> ImportedCapture {
-        let bytes = try Data(contentsOf: fileURL, options: .mappedIfSafe)
+        let didAccessSecurityScope = fileURL.startAccessingSecurityScopedResource()
+        defer {
+            if didAccessSecurityScope { fileURL.stopAccessingSecurityScopedResource() }
+        }
+        if let size = try fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize,
+           size > maximumBytes {
+            throw OriginalImageImportError.fileTooLarge(maximumBytes: maximumBytes)
+        }
+        // Copy the bounded original while the security scope is open so the
+        // session does not retain an external file mapping after dismissal.
+        let bytes = try Data(contentsOf: fileURL)
         #if canImport(ImageIO)
-        return .init(originalFileData: bytes, metadata: OriginalImageMetadataReader.metadata(for: bytes))
+        return try OriginalImageMetadataReader.importedCapture(for: bytes, maximumBytes: maximumBytes)
         #else
+        guard !bytes.isEmpty else { throw OriginalImageImportError.emptyData }
+        guard bytes.count <= maximumBytes else {
+            throw OriginalImageImportError.fileTooLarge(maximumBytes: maximumBytes)
+        }
         return .init(originalFileData: bytes, metadata: .init())
         #endif
     }
@@ -42,13 +91,17 @@ import PhotosUI
 @available(iOS 16.0, *)
 public struct PhotosPickerOriginalImageImporter: CaptureImporting {
     private let item: PhotosPickerItem
-    public init(item: PhotosPickerItem) { self.item = item }
+    private let maximumBytes: Int
+    public init(item: PhotosPickerItem, maximumBytes: Int = OriginalImageImportPolicy.maximumBytes) {
+        self.item = item
+        self.maximumBytes = maximumBytes
+    }
 
     public func loadOriginal() async throws -> ImportedCapture {
         guard let bytes = try await item.loadTransferable(type: Data.self) else {
             throw CocoaError(.fileReadNoSuchFile)
         }
-        return .init(originalFileData: bytes, metadata: OriginalImageMetadataReader.metadata(for: bytes))
+        return try OriginalImageMetadataReader.importedCapture(for: bytes, maximumBytes: maximumBytes)
     }
 }
 #endif

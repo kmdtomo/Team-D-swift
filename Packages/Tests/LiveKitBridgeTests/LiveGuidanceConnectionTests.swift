@@ -31,6 +31,7 @@ import Testing
     await sut.join()
     #expect(await transport.joinRecords.count == 1)
 
+    #expect(await waitUntil { await sut.snapshot().videoPublishState == .publishing })
     await sut.requestAppProducedVideoPublish()
     await sut.requestAppProducedVideoPublish()
     #expect(await sut.snapshot().videoPublishState == .publishing)
@@ -78,6 +79,8 @@ import Testing
     #expect(delivery.sequence == 1)
     #expect(delivery.display == .init(code: .moveCloser))
     #expect(delivery.deliveryLatencyMilliseconds == 100)
+    #expect(snapshot.latencySampleCount == 1)
+    #expect(snapshot.guidanceDeliveryLatencyP95Milliseconds == 100)
 }
 
 @Test func reliablePacketStaysOpaqueAndCannotMutateGuidanceOrWorkflowState() async throws {
@@ -106,6 +109,32 @@ import Testing
     }
     #expect(packet.payload == uncontracted)
     #expect(packet.participantIdentity == "agent")
+}
+
+@Test func deliveryLatencySnapshotReportsBoundedNearestRankP95() async throws {
+    let transport = FakeRoomTransport()
+    let sut = try connection(
+        tokenProvider: RecordingTokenProvider(response: try tokenResponse()),
+        transport: transport
+    )
+    await sut.join()
+    #expect(await waitUntil { await sut.snapshot().phase == .connected })
+
+    for latency in 1...20 {
+        await transport.yieldLossy(
+            try guidance(
+                sequence: Int64(latency),
+                observedAt: Int64(1_000 - latency),
+                expiresAt: 2_000
+            ),
+            roomIndex: 0
+        )
+    }
+
+    #expect(await waitUntil { await sut.snapshot().acceptedGuidanceCount == 20 })
+    let metrics = await sut.snapshot()
+    #expect(metrics.latencySampleCount == 20)
+    #expect(metrics.guidanceDeliveryLatencyP95Milliseconds == 19)
 }
 
 @Test func oldRoomPacketsCannotCrossLeaveOrReconnectGeneration() async throws {
@@ -161,11 +190,54 @@ import Testing
     )
     await publishUnavailable.join()
     #expect(await waitUntil { await publishUnavailable.snapshot().phase == .connected })
-    await publishUnavailable.requestAppProducedVideoPublish()
-    #expect(
+    #expect(await waitUntil {
         await publishUnavailable.snapshot().videoPublishState ==
             .unavailable(.appProducedVideoPublishHandoffUnavailable)
+    })
+}
+
+@Test func tokenLifetimeBeyondTheFiveMinuteHardMaximumIsRejectedBeforeRoomJoin() async throws {
+    let overlong = try LiveKitTokenResponse(
+        token: "unit-test-value",
+        participantIdentity: "ios-session-123",
+        roomName: "listing-session-123",
+        expiresAt: 302,
+        livekitUrl: "wss://livekit.example.invalid"
     )
+    let transport = FakeRoomTransport()
+    let sut = try connection(
+        tokenProvider: RecordingTokenProvider(response: overlong),
+        transport: transport
+    )
+
+    await sut.join()
+
+    #expect(await waitUntil {
+        await sut.snapshot().phase == .failed(.tokenLifetimeExceedsHardMaximum)
+    })
+    #expect(await transport.joinRecords.isEmpty)
+}
+
+@Test func roomStatusAdapterExposesReconnectWithoutChangingCaptureWorkflowAndFailsOnDisconnect() async throws {
+    let tokenProvider = RecordingTokenProvider(response: try tokenResponse())
+    let transport = FakeRoomTransport()
+    let sut = try connection(tokenProvider: tokenProvider, transport: transport)
+    await sut.join()
+    #expect(await waitUntil { await sut.snapshot().phase == .connected })
+
+    await transport.yieldStatus(.reconnecting, roomIndex: 0)
+    #expect(await waitUntil { await sut.snapshot().phase == .reconnecting })
+    let reconnecting = await sut.snapshot()
+    #expect(reconnecting.guidanceConnection == .reconnecting)
+    #expect(reconnecting.currentShot == .front)
+
+    await transport.yieldStatus(.connected, roomIndex: 0)
+    #expect(await waitUntil { await sut.snapshot().phase == .connected })
+    await transport.yieldStatus(.disconnected, roomIndex: 0)
+    #expect(await waitUntil {
+        await sut.snapshot().phase == .failed(.transportDisconnected)
+    })
+    #expect(await transport.leaveHandles.count == 1)
 }
 
 @Test func leaveCancelsAnOutstandingTokenRequestWithoutJoiningARoom() async throws {
@@ -313,6 +385,8 @@ private struct RoomPipe: Sendable {
     let lossyContinuation: AsyncStream<LiveGuidanceTransportPacket>.Continuation
     let reliable: AsyncStream<LiveGuidanceTransportPacket>
     let reliableContinuation: AsyncStream<LiveGuidanceTransportPacket>.Continuation
+    let statuses: AsyncStream<LiveGuidanceTransportConnectionStatus>
+    let statusContinuation: AsyncStream<LiveGuidanceTransportConnectionStatus>.Continuation
 }
 
 private actor FakeRoomTransport: LiveGuidanceRoomTransporting {
@@ -336,18 +410,22 @@ private actor FakeRoomTransport: LiveGuidanceRoomTransporting {
         joinRecords.append(.init(sessionID: request.sessionID, description: request.description))
         let lossy = AsyncStream<LiveGuidanceTransportPacket>.makeStream()
         let reliable = AsyncStream<LiveGuidanceTransportPacket>.makeStream()
+        let statuses = AsyncStream<LiveGuidanceTransportConnectionStatus>.makeStream()
         rooms.append(
             .init(
                 lossy: lossy.stream,
                 lossyContinuation: lossy.continuation,
                 reliable: reliable.stream,
-                reliableContinuation: reliable.continuation
+                reliableContinuation: reliable.continuation,
+                statuses: statuses.stream,
+                statusContinuation: statuses.continuation
             )
         )
         return .init(
             handle: request.requestID,
             lossyPackets: lossy.stream,
-            reliablePackets: reliable.stream
+            reliablePackets: reliable.stream,
+            statusChanges: statuses.stream
         )
     }
 
@@ -373,6 +451,9 @@ private actor FakeRoomTransport: LiveGuidanceRoomTransporting {
     }
 
     func finishLossy(roomIndex: Int) { rooms[roomIndex].lossyContinuation.finish() }
+    func yieldStatus(_ status: LiveGuidanceTransportConnectionStatus, roomIndex: Int) {
+        rooms[roomIndex].statusContinuation.yield(status)
+    }
 }
 
 private actor OutputRecorder: LiveGuidanceConnectionOutputReceiving {

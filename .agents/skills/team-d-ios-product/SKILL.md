@@ -12,9 +12,9 @@ Keep product behavior explicit, traceable, and independent of the Web implementa
 1. Read the repository-root `requirements.md` completely.
 2. Read the relevant `task.md` tasks and dependencies.
 3. Inspect versioned contracts, fixtures, and backend availability when the question touches wire behavior.
-4. Treat the source repository only as read-only evidence at the SHA recorded in the repository. Do not silently follow its moving `main`.
+4. For backend-related work, fetch and inspect the current remote default branch of `neko-jpg/Team-D` as read-only upstream evidence. Record the exact inspected commit and retrieval time; never edit, commit, branch, or push there.
 
-The user's latest explicit decision overrides documents. Otherwise, `requirements.md` defines product behavior and delivery constraints, frozen wire contracts define payload shape, and `task.md` defines lanes plus start/integration/acceptance dependencies. A task checkbox is committed implementation evidence after a P0-free bounded source review, not final acceptance and not a universal start gate. Build/test/live/device evidence and `accepted` status remain separate. Surface a conflict rather than choosing silently.
+The user's latest explicit decision overrides documents. Otherwise, `requirements.md` defines product behavior and delivery constraints, the latest inspected backend commit establishes current upstream implementation and availability, frozen wire contracts define the payload shape currently consumed by Swift, and `task.md` defines lanes plus start/integration/acceptance dependencies. Historical commit IDs on contracts, fixtures, audits, and verification records are provenance rather than a permanent upstream pin. A task checkbox is committed implementation evidence after a P0-free bounded source review, not final acceptance and not a universal start gate. Build/test/live/device evidence and `accepted` status remain separate. Surface a conflict rather than choosing silently.
 
 ## Classify the request
 
@@ -61,6 +61,8 @@ Do not add OpenSpec. Do not copy source requirements or React skill files wholes
 
 ## Contract discipline
 
+- Refresh the upstream default branch before backend-dependent planning, implementation, review, or live verification. Compare the inspected commit with the current versioned Swift contract and record drift; never reuse an old availability audit as current fact without that check.
+- Do not silently consume upstream contract drift. Update affected schemas, goldens, fixtures, requirements, and tasks in one scoped synchronization before integrating incompatible payloads or behavior.
 - Use finite enums and strict payloads; reject unknown required keys and invalid normalized coordinates.
 - Keep `ShotAssessment` limited to `front/back/tag`; measurement acceptance has a separate contract.
 - Keep measurement-point responses to four normalized points with no confidence or centimeter values.

@@ -47,7 +47,6 @@ When the user asks this task to use subagents or parallelize delivery, use a sha
 
 - Default to one parent and up to three direct implementation subagents when four concurrency slots are available. Use fewer children when fewer conflict-free work units exist; an idle slot is cheaper than file conflicts or duplicate work.
 - Do not let children spawn grandchildren. Do not create or manage peer Codex tasks as a substitute for child agents. Parallel workers for this plan must be descendants of the current parent only.
-- Prefer `gpt-5.6-sol` with `high` reasoning for the parent when model choice is available; reserve `xhigh` for genuinely difficult architecture, integration, or `P0` decisions. Prefer `gpt-5.6-terra` with `medium` reasoning for implementation children. Preserve an explicit user model choice over these defaults.
 - The parent owns task selection, dependency/artifact checks, lane and file ownership, shared contracts, `project.pbxproj` and scheme/package integration, candidate integration, final verification dispatch, verification evidence, and `task.md` updates.
 - Each child receives exactly one task ID and lane at a time, an upstream commit, an exclusive file set, a dedicated branch/worktree, tests to author, and the required fixture/live/device gates. The child normally returns one or two meaningful commits, using a third only when separation is necessary.
 - Children must not edit `task.md`, shared project files, package locks, shared schemas, or root navigation unless the parent explicitly assigns that ownership. They return the candidate SHA, changed files, tests authored but not run, and remaining integration/live/device gates.
@@ -55,7 +54,7 @@ When the user asks this task to use subagents or parallelize delivery, use a sha
 - During Phase 1, do not reserve a child as a standing reviewer. The parent checks ownership, scope, and obvious `P0` risks only; defer the full integrated review to the Phase 2 verification owner. `P1` through `P3` do not consume another child pass.
 - When a child returns the full candidate, test code, and implementation-review data, end that child work unit. Do not reuse it for another task. The parent performs the single bounded source review and serial `task.md` update. Device, live, credential, physical-corpus, and acceptance gates remain recorded without extending the assignment.
 - Integrate candidate commits without running builds only when integration is inside the parent's fixed assignment. After every task in that boundary is committed or blocked, stop; begin the dedicated final verification phase only under a separate explicit assignment or when the initial request included it.
-- In final verification, assign one direct child as the exclusive verification-and-fix owner of one clean integrated worktree. Prefer `gpt-5.6-sol` with `high` reasoning when available. Other children must not write to that worktree; they may perform bounded read-only diagnosis only when the verification owner requests a specific failure analysis.
+- In final verification, assign one direct child as the exclusive verification-and-fix owner of one clean integrated worktree. Other children must not write to that worktree; they may perform bounded read-only diagnosis only when the verification owner requests a specific failure analysis.
 
 ## Implement within the lane
 

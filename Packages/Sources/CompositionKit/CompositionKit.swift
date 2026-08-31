@@ -28,8 +28,10 @@ public enum RasterColorSpace: Sendable, Equatable {
     case unsupported
 }
 
-/// A straight-alpha, row-major RGBA8 raster.  The compositor emits opaque
-/// output; photographed front images are expected to be opaque RGB images.
+/// A straight-alpha, row-major RGBA8 raster. Photographed front and background
+/// inputs are expected to be opaque RGB images. A composite remains opaque,
+/// while a transparent cutout keeps the normalized front RGB and replaces only
+/// its alpha channel with the validated mask.
 public struct RGBA8Raster: Sendable, Equatable {
     public let width: Int
     public let height: Int
@@ -93,6 +95,19 @@ public struct CompositionInput: Sendable, Equatable {
     }
 }
 
+/// The only two pixel sources permitted for the background-independent cutout.
+/// The result is an intermediate preview artifact, never an approval or export
+/// candidate by itself.
+public struct TransparentCutoutInput: Sendable, Equatable {
+    public let front: RGBA8Raster
+    public let mask: Mask8Raster
+
+    public init(front: RGBA8Raster, mask: Mask8Raster) {
+        self.front = front
+        self.mask = mask
+    }
+}
+
 public enum CompositionError: Error, Sendable, Equatable {
     case zeroDimensions
     case invalidRGBAByteCount
@@ -129,15 +144,7 @@ public enum FrontImageCompositor {
         let mask = try normalize(input.mask, cancellationProbe: cancellationProbe)
         let background = try normalize(input.background, cancellationProbe: cancellationProbe)
 
-        guard front.width == mask.width, front.height == mask.height else {
-            throw CompositionError.dimensionMismatch
-        }
-        guard mask.pixels.contains(where: { $0 != 0 }) else {
-            throw CompositionError.emptyMask
-        }
-        guard mask.pixels.contains(where: { $0 != 255 }) else {
-            throw CompositionError.fullMask
-        }
+        try validateMask(mask, matches: front, cancellationProbe: cancellationProbe)
 
         var output = [UInt8](repeating: 0, count: front.pixels.count)
         for y in 0 ..< front.height {
@@ -162,6 +169,31 @@ public enum FrontImageCompositor {
                     )
                 }
                 output[frontOffset + 3] = 255
+            }
+        }
+        return RGBA8Raster(width: front.width, height: front.height, pixels: output)
+    }
+
+    /// Produces a straight-alpha cutout without requiring or consulting a
+    /// generated background. Every output RGB byte comes from the normalized
+    /// original front image and every output alpha byte comes from the mask.
+    /// Invalid empty, full, mismatched, or unsupported masks fail closed.
+    @available(macOS 10.15, iOS 13, *)
+    public static func makeTransparentCutout(
+        _ input: TransparentCutoutInput,
+        cancellationProbe: @escaping CompositionCancellationProbe = { Task<Never, Never>.isCancelled }
+    ) throws -> RGBA8Raster {
+        try checkCancellation(cancellationProbe)
+        let front = try normalize(input.front, cancellationProbe: cancellationProbe)
+        let mask = try normalize(input.mask, cancellationProbe: cancellationProbe)
+        try validateMask(mask, matches: front, cancellationProbe: cancellationProbe)
+
+        var output = front.pixels
+        for y in 0 ..< front.height {
+            try checkCancellation(cancellationProbe)
+            for x in 0 ..< front.width {
+                let pixel = y * front.width + x
+                output[pixel * 4 + 3] = mask.pixels[pixel]
             }
         }
         return RGBA8Raster(width: front.width, height: front.height, pixels: output)
@@ -232,6 +264,33 @@ public enum FrontImageCompositor {
             }
         }
         return Mask8Raster(width: dimensions.width, height: dimensions.height, pixels: pixels)
+    }
+
+    private static func validateMask(
+        _ mask: Mask8Raster,
+        matches front: RGBA8Raster,
+        cancellationProbe: CompositionCancellationProbe
+    ) throws {
+        guard front.width == mask.width, front.height == mask.height else {
+            throw CompositionError.dimensionMismatch
+        }
+
+        var hasForeground = false
+        var hasBackground = false
+        for y in 0 ..< mask.height {
+            try checkCancellation(cancellationProbe)
+            let rowStart = y * mask.width
+            for x in 0 ..< mask.width {
+                let value = mask.pixels[rowStart + x]
+                hasForeground = hasForeground || value != 0
+                hasBackground = hasBackground || value != 255
+                if hasForeground, hasBackground {
+                    return
+                }
+            }
+        }
+        guard hasForeground else { throw CompositionError.emptyMask }
+        guard hasBackground else { throw CompositionError.fullMask }
     }
 
     private static func validateDimensions(_ width: Int, _ height: Int) throws {

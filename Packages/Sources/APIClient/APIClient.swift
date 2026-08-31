@@ -53,9 +53,15 @@ public struct MultipartForm: Sendable {
         body += Data("\r\n--\(boundary.value)--\r\n".utf8)
         return body
     }
-    public func analyzeBody(shot: AssessableShot, data: Data, contentType: ImageContentType) -> Data {
+    public func analyzeBody(
+        shot: AssessableShot,
+        data: Data,
+        contentType: ImageContentType,
+        imageField: String = "image"
+    ) -> Data {
         var body = Data("--\(boundary.value)\r\nContent-Disposition: form-data; name=\"requestedShot\"\r\nContent-Type: text/plain\r\n\r\n\(shot.rawValue)\r\n".utf8)
-        body += imageBody(data: data, contentType: contentType).dropFirst(Data("--\(boundary.value)\r\n".utf8).count)
+        body += imageBody(field: imageField, data: data, contentType: contentType)
+            .dropFirst(Data("--\(boundary.value)\r\n".utf8).count)
         return body
     }
 }
@@ -86,9 +92,21 @@ public actor BackendAPIClient {
         request.httpBody = form.imageBody(data: data, contentType: type)
         return request
     }
-    public func plannedAnalyzeRequest(shot: AssessableShot, data: Data, type: ImageContentType, boundary: MultipartBoundary, key: IdempotencyKey) throws -> URLRequest {
+    public func plannedAnalyzeRequest(
+        shot: AssessableShot,
+        data: Data,
+        type: ImageContentType,
+        boundary: MultipartBoundary,
+        key: IdempotencyKey,
+        imageField: String = "image"
+    ) throws -> URLRequest {
         var request = try plannedMultipartRequest(.analyzeShot, data: data, type: type, boundary: boundary, key: key)
-        request.httpBody = MultipartForm(boundary: boundary).analyzeBody(shot: shot, data: data, contentType: type)
+        request.httpBody = MultipartForm(boundary: boundary).analyzeBody(
+            shot: shot,
+            data: data,
+            contentType: type,
+            imageField: imageField
+        )
         return request
     }
     public func plannedMeasurementRequest(data: Data, type: ImageContentType, boundary: MultipartBoundary, key: IdempotencyKey) throws -> URLRequest { try plannedMultipartRequest(.measurementPoints,data:data,type:type,boundary:boundary,key:key) }

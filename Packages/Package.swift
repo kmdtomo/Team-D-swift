@@ -18,6 +18,12 @@ let package = Package(
         .library(name: "CompositionKit", targets: ["CompositionKit"]),
         .library(name: "TestSupport", targets: ["TestSupport"]),
     ],
+    dependencies: [
+        .package(
+            url: "https://github.com/livekit/client-sdk-swift.git",
+            exact: "2.16.0"
+        ),
+    ],
     targets: [
         .target(name: "DomainKit"),
         .target(
@@ -34,7 +40,11 @@ let package = Package(
         ),
         .target(
             name: "LiveKitBridge",
-            dependencies: ["CaptureKit", "ContractKit"]
+            dependencies: [
+                "CaptureKit",
+                "ContractKit",
+                .product(name: "LiveKit", package: "client-sdk-swift"),
+            ]
         ),
         .target(
             name: "MeasurementKit",

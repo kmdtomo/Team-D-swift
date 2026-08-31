@@ -2,17 +2,18 @@
 
 ## 0. この計画の前提
 
-- 参照元は [`neko-jpg/Team-D`](https://github.com/neko-jpg/Team-D) の `44065d41e8906d34e5d8e11d7cd4cc14b25d17f2`（2026-08-31 18:38 JST時点の`main`）に固定する。参照元は読み取り専用とし、変更・commit・pushしない。
+- 参照元backendは [`neko-jpg/Team-D`](https://github.com/neko-jpg/Team-D) のリモートdefault branchとする。backend関連の計画・実装・review・live検証の開始時に読み取り専用で最新を取得・確認し、確認したcommit SHAと時刻を作業・検証証跡に記録する。現在のbackend実装やavailabilityを特定SHAに永続固定せず、参照元を変更・commit・branch・pushしない。
 - Swift版の機能要件と受け入れ条件は本リポジトリの[`requirements.md`](./requirements.md)を正本とする。参照元のOpenSpec `specs/`、`requirements.md`、`architecture.md`はその調査根拠である。OpenSpecは参照元だけで維持し、Swiftリポジトリに`openspec/`やその運用を持ち込まない。Web固有の実装選択は継承しない。矛盾が見つかった場合は、要件を変更せず`requirements.md`と本ファイルに契約差分を記録し、解消するまで該当実装を進めない。
+- 最新backendの変更は、Swift版の要件やversion付きwire contractを暗黙に上書きしない。差分を検出したら、影響範囲を限定した同期作業で必要な要件、schema、golden、fixture、taskを更新する。過去のcommit SHAは契約・fixture・監査・検証の再現用出典として保持する。
 - このファイルのチェックは、既存Web版の完了状態と無関係に**すべて未完了から開始**する。Web版は並行して維持する。
 - 対象は平置きの半袖クルーネックTシャツ1着、必須写真は `front → back → tag → measurement` の4枚、採寸項目は着丈と身幅だけとする。
 - UIはSwiftUI、カメラはAVFoundation、非同期処理はSwift Concurrency、通信はURLSession、ライブ映像はLiveKit Swift SDK、画像処理はVision/Core Image/Accelerate/ImageIO/simd、合成はCore ImageまたはCore Graphics、テストはSwift Testing/XCTest/XCUITestを第一候補とする。
 - iOSクライアント開発にDockerを必須としない。fixtureモードはXcodeだけで完走でき、liveモードは共有HTTPS backendとLiveKit Cloudへ接続する。ローカルbackendは任意手順に分離する。
 - ARKit、WebXR、3D AR、6DoF、自動撮影は使用しない。AVFoundationプレビュー上の固定2Dガイドだけを使用する。
-- 参照元snapshotには、Python FastAPIの`/api/health`と`/api/livekit-token`、短命・最小権限token発行、LiveKit Agentのcamera track限定購読、capacity 1のlatest-frame処理、同時推論1件、`VisionGuidanceProvider`契約、`GuidanceStateMachine`、JS Room接続smoke、Python/TypeScriptのcontract testが実装済みである。これらはSwiftへ移植せず、共有backendとして再利用する。
-- 同snapshotで未実装なのは、実際のvision providerをAgentへ接続してGuidance data packet/RPCをpushする配線、`POST /api/analyze-shot`、`/api/suggest-measurement-points`、`/api/generate-background`、`/api/remove-background`である。Swift側でbackendを実装せず、各live taskの外部依存として明示する。未提供中もfixture開発は止めず、liveを利用可能と偽らない。
+- 初期調査commit `44065d41e8906d34e5d8e11d7cd4cc14b25d17f2`（2026-08-31 18:38 JST時点）には、Python FastAPIの`/api/health`と`/api/livekit-token`、短命・最小権限token発行、LiveKit Agentのcamera track限定購読、capacity 1のlatest-frame処理、同時推論1件、`VisionGuidanceProvider`契約、`GuidanceStateMachine`、JS Room接続smoke、Python/TypeScriptのcontract testが実装済みだった。これは履歴的な調査基準であり、現在のbackend availabilityは作業開始時に最新default branchで再確認する。backendはSwiftへ移植せず共用する。
+- 同初期調査commitで未実装だったのは、実際のvision providerをAgentへ接続してGuidance data packet/RPCをpushする配線、`POST /api/analyze-shot`、`/api/suggest-measurement-points`、`/api/generate-background`、`/api/remove-background`である。この情報は現在の未実装を保証しない。最新確認後も未提供のものは各live taskの外部依存として明示し、Swift側で代替backendを実装せず、liveを利用可能と偽らない。fixture開発は止めない。
 
-調査根拠は、同snapshotの [`requirements.md`](https://github.com/neko-jpg/Team-D/blob/44065d41e8906d34e5d8e11d7cd4cc14b25d17f2/requirements.md)、[`architecture.md`](https://github.com/neko-jpg/Team-D/blob/44065d41e8906d34e5d8e11d7cd4cc14b25d17f2/architecture.md)、[OpenSpec design](https://github.com/neko-jpg/Team-D/blob/44065d41e8906d34e5d8e11d7cd4cc14b25d17f2/openspec/changes/build-listing-photo-assistant-mvp/design.md)、[`guided-garment-capture` spec](https://github.com/neko-jpg/Team-D/blob/44065d41e8906d34e5d8e11d7cd4cc14b25d17f2/openspec/changes/build-listing-photo-assistant-mvp/specs/guided-garment-capture/spec.md)、[`background-preserving-edit` spec](https://github.com/neko-jpg/Team-D/blob/44065d41e8906d34e5d8e11d7cd4cc14b25d17f2/openspec/changes/build-listing-photo-assistant-mvp/specs/background-preserving-edit/spec.md)、[`backend/`](https://github.com/neko-jpg/Team-D/tree/44065d41e8906d34e5d8e11d7cd4cc14b25d17f2/backend)、[`tests/`](https://github.com/neko-jpg/Team-D/tree/44065d41e8906d34e5d8e11d7cd4cc14b25d17f2/tests)とする。
+初期調査の履歴根拠は、同commitの [`requirements.md`](https://github.com/neko-jpg/Team-D/blob/44065d41e8906d34e5d8e11d7cd4cc14b25d17f2/requirements.md)、[`architecture.md`](https://github.com/neko-jpg/Team-D/blob/44065d41e8906d34e5d8e11d7cd4cc14b25d17f2/architecture.md)、[OpenSpec design](https://github.com/neko-jpg/Team-D/blob/44065d41e8906d34e5d8e11d7cd4cc14b25d17f2/openspec/changes/build-listing-photo-assistant-mvp/design.md)、[`guided-garment-capture` spec](https://github.com/neko-jpg/Team-D/blob/44065d41e8906d34e5d8e11d7cd4cc14b25d17f2/openspec/changes/build-listing-photo-assistant-mvp/specs/guided-garment-capture/spec.md)、[`background-preserving-edit` spec](https://github.com/neko-jpg/Team-D/blob/44065d41e8906d34e5d8e11d7cd4cc14b25d17f2/openspec/changes/build-listing-photo-assistant-mvp/specs/background-preserving-edit/spec.md)、[`backend/`](https://github.com/neko-jpg/Team-D/tree/44065d41e8906d34e5d8e11d7cd4cc14b25d17f2/backend)、[`tests/`](https://github.com/neko-jpg/Team-D/tree/44065d41e8906d34e5d8e11d7cd4cc14b25d17f2/tests)とする。新しいbackend関連作業はこのcommitを現在の正本とせず、その時点の最新default branchと差分を確認する。
 
 ### 引き継ぐ契約の要約
 
@@ -111,18 +112,19 @@ taskを`[x]`へ変更するcommitには、既存の最終`Verification`記録と
 
 ## 1. 既存資産の棚卸しと移行境界
 
-- [x] **T01-01 参照元snapshotと要件トレーサビリティを固定する**
-  - 担当する責務: レーンAが、参照元commitとSwift版へ継ぐ要件・受け入れ条件を一意に追跡できるようにする。
+- [x] **T01-01 参照元backendの追従方針と要件トレーサビリティを管理する**
+  - 担当する責務: レーンAが、最新backendの確認commitとSwift版へ継ぐ要件・受け入れ条件を区別して追跡できるようにする。
   - 依存する先行タスク: なし。
-  - 実装対象: `requirements.md`と本`task.md`内のsnapshot記録、参照元OpenSpec/requirements/architectureからSwift受け入れID・タスクへの対応、未解決差分一覧。別のOpenSpecや移行manifestは作成しない。
-  - 完了条件: source repo URLとcommit SHAが`requirements.md`と本ファイルに固定され、全受け入れIDが少なくとも1つの本ファイル内タスクへ紐付き、現行3slot実装を正本にしないことが明記され、Swiftリポジトリ内に`openspec/`が存在しない。
-  - 自動テスト方法: CIで`requirements.md`と本ファイルのSHA形式、参照リンク、受け入れIDの重複・未割当、`openspec/`非存在をlintする。
+  - 実装対象: `requirements.md`と本`task.md`内の最新backend確認方針、履歴的な出典commit、参照元OpenSpec/requirements/architectureからSwift受け入れID・タスクへの対応、未解決差分一覧。別のOpenSpecや移行manifestは作成しない。
+  - 完了条件: source repo URL、backend関連作業ごとの最新default branch確認、確認commit・時刻の証跡化、契約差分の扱いが`requirements.md`と本ファイルに明記され、現在のbackendが永続的なSHAへ固定されない。加えて、全受け入れIDが少なくとも1つの本ファイル内タスクへ紐付き、現行3slot実装を正本にしないことが明記され、Swiftリポジトリ内に`openspec/`が存在しない。
+  - 自動テスト方法: CIで`requirements.md`と本ファイルの追従方針、履歴SHAと現在の正本の分離、参照リンク、受け入れIDの重複・未割当、`openspec/`非存在をlintする。
   - 実機確認が必要か: 不要。
   - fixture / live: 両方の設計境界を確認する。
 
 ### T01-01 トレーサビリティ記録（2026-08-31）
 
-- 固定参照元: [`neko-jpg/Team-D@44065d41e8906d34e5d8e11d7cd4cc14b25d17f2`](https://github.com/neko-jpg/Team-D/tree/44065d41e8906d34e5d8e11d7cd4cc14b25d17f2)。このSHA以外の参照元`main`は要件入力にしない。
+- 初期調査基準: [`neko-jpg/Team-D@44065d41e8906d34e5d8e11d7cd4cc14b25d17f2`](https://github.com/neko-jpg/Team-D/tree/44065d41e8906d34e5d8e11d7cd4cc14b25d17f2)。このSHAは履歴・v1契約・fixtureの出典であり、現在のbackend正本を永続的に固定しない。
+- 新しいbackend関連作業は、参照元のリモートdefault branchを更新確認し、確認したcommit SHAと時刻、現行のversion付きSwift契約との差分を記録する。
 - 調査根拠は参照元の`requirements.md`、`architecture.md`、OpenSpec design、および2つのOpenSpec specである。Swift版の正本は本リポジトリの`requirements.md`であり、`openspec/`、移行manifest、参照元の文書・Web実装は追加しない。
 - 現行参照元の3slot実装は正本ではない。Swift版は`front → back → tag → measurement`の4slotを正本とし、`measurement`を`ShotAssessment`契約へ混在させない。
 - fixtureはXcode/Simulatorで決定的に完走する開発・検証モード、liveは共有HTTPS backendとLiveKit Cloudを使う独立検証モードである。live障害をfixture成功へ置換しない。
@@ -137,6 +139,7 @@ taskを`[x]`へ変更するcommitには、既存の最終`Verification`記録と
 | AC-CAP-004 | T04-03, T08-03, T18-01, T19-04 | SRC-G「ライブ助言はサーバーからpush」のstale scenario, SRC-G「画面遷移はアプリ状態から決定」 |
 | AC-CAP-005 | T05-01, T06-01, T06-02, T18-01, T19-04 | SRC-R §5 R1/R2, SRC-G「手動撮影はライブ判定により禁止されない」 |
 | AC-CAP-006 | T09-01, T09-02, T10-01, T17-03, T18-03, T19-04 | SRC-R §5 R3/R4, SRC-G「撮影後AIは限定された構造化結果を返す」 |
+| AC-CAP-007 | T08-03, T10-01, T17-02, T18-03, T19-04 | 最新backendのshot-aware Agent状態とSRC-G「画面遷移はアプリ状態から決定」をSwift/LiveKit間の明示context同期として固定 |
 | AC-FLOW-001 | T04-01, T10-01, T17-03, T18-03, T19-04 | SRC-R §4/§5 R4, SRC-G「撮影セッションは必須写真と進捗を示す」 |
 | AC-MEAS-001 | T11-02, T12-01, T12-02, T12-03, T13-01, T13-02, T18-03, T19-04 | SRC-R §5 R5, SRC-A §6, SRC-G「採寸」「幾何検証」「補正と承認」 |
 | AC-MEAS-002 | T10-02, T13-03, T17-03, T18-03, T19-04 | SRC-G「採寸写真を幾何検証して縮尺を得る」のfailure scenarios, SRC-G「カメラと外部処理の失敗から復帰」 |
@@ -145,6 +148,7 @@ taskを`[x]`へ変更するcommitには、既存の最終`Verification`記録と
 | AC-EDIT-001 | T14-01, T15-02, T17-02, T19-04 | SRC-R §5 R6/R7, SRC-B「正面画像だけを編集対象にする」 |
 | AC-EDIT-002 | T14-02, T17-02, T19-04 | SRC-R §5 R6, SRC-D「商品を含まない背景だけを生成する」 |
 | AC-EDIT-003 | T15-01, T15-02, T17-01, T19-04 | SRC-R §5 R7, SRC-A §8, SRC-B「商品領域は元画像とmaskから合成」 |
+| AC-EDIT-004 | T14-01, T15-01, T17-01, T19-04 | 利用者の最新明示要件。SRC-Bのmask検証と元front画素保持を透明中間previewへ適用 |
 | AC-APPROVAL-001 | T13-01, T13-02, T16-01, T17-03, T19-04 | SRC-R §5 R5/R8, SRC-G「補正と承認」, SRC-B「比較して承認」 |
 | AC-DATA-001 | T04-02, T16-02, T17-01, T18-02, T19-04 | SRC-R §5 R9, SRC-A §9, SRC-G「失敗から復帰」 |
 | AC-MODE-001 | T03-03, T03-04, T10-02, T17-01, T17-02, T17-03, T19-04 | SRC-R §5 R9, SRC-D §4「Python backendのprovider境界」 |
@@ -152,11 +156,11 @@ taskを`[x]`へ変更するcommitには、既存の最終`Verification`記録と
 
 #### 未解決の参照元差分／外部依存
 
-| 項目 | 現時点の事実 | 所有・解消条件 |
+| 項目 | 初期監査時点の事実（作業開始時に最新を再確認） | 所有・解消条件 |
 |---|---|---|
 | Guidance sequence | 参照元TypeScript schemaは`sequence=0`を許容するが、実装済みPython backend wireは1以上を要求する。 | T03-01でSwiftはwireに合わせ0を拒否し、参照元側のschema差分を解消または互換方針として記録する。 |
-| Agent Guidance push | transport coreはあるが、実vision providerからdata packet/RPCへpushする配線は未実装。 | 参照元shared backend owner。T03-02/T03-05でavailabilityとversion付き契約を固定し、T08-02 live完了前に提供する。 |
-| 4つのHTTP endpoint | `/api/analyze-shot`、`/api/suggest-measurement-points`、`/api/generate-background`、`/api/remove-background`は参照元snapshotで未実装。 | 参照元shared backend owner。Swiftは代替backendを実装せず、T03-02でcontractを固定し各live taskの外部blockerとして扱う。 |
+| Agent Guidance push | transport coreはあるが、実vision providerからdata packet/RPCへpushする配線は未実装だった。 | 参照元shared backend owner。T08-02のbackend関連作業開始時に最新default branchで再監査し、未提供ならversion付き契約とlive blockerを維持する。 |
+| 4つのHTTP endpoint | `/api/analyze-shot`、`/api/suggest-measurement-points`、`/api/generate-background`、`/api/remove-background`は初期調査commitで未実装だった。 | 参照元shared backend owner。各live taskの開始時に最新default branchで再監査し、未提供ならSwiftは代替backendを実装せずversion付きcontract上の外部blockerとして扱う。 |
 | fixture binary | 参照元9画像のコピー可否・利用許諾・hashは未判定。 | T01-02で資産単位に許可または不採用を決めるまでコピーしない。 |
 | AC-DEVICE-001 evidence | VoiceOverと最大Dynamic Typeの実機確認は要件にあるが、T18-01/T19-04の完了条件に明示的な照合項目がない。 | T19-04のtrace/evidence設計時に未充足として扱い、要件を変更せず、該当タスクの範囲で明示的な証跡チェックを追加する。 |
 
@@ -315,7 +319,7 @@ taskを`[x]`へ変更するcommitには、既存の最終`Verification`記録と
   - 実機確認が必要か: 不要。
   - fixture / live: fixture。
 
-- [ ] **T03-05 参照元の実装済みPython backend／LiveKit Agentを共用し、残るbackend gapを固定する**
+- [x] **T03-05 参照元の実装済みPython backend／LiveKit Agentを共用し、残るbackend gapを固定する**
   - 担当する責務: レーンC/Fが、参照元のLiveKit実装をSwiftへコピーせず共有serviceとして再利用し、実装済みと未実装を混同しない。
   - 依存する先行タスク: T03-02, T03-03。
   - 実装対象: `backend/app.py`, `livekit_token.py`, `live_agent.py`, `guidance_state_machine.py`, `providers/vision_guidance.py`、対応Python test、`requirements-backend.txt`、共有HTTPS staging、backend availability matrix。browser smokeのVITE token手順はSwiftへ持ち込まない。
@@ -323,6 +327,14 @@ taskを`[x]`へ変更するcommitには、既存の最終`Verification`記録と
   - 自動テスト方法: 参照元lockで`tests/test_livekit_token.py`, `test_live_agent.py`, `test_guidance_contract.py`を実行し、保護されたstagingでhealth/token claim/Room join/camera subscribeをsmokeする。未実装surfaceは期待どおりavailability matrixでfalseとなり、提供後に各dependent taskのcontract smokeを追加する。
   - 実機確認が必要か: 不要（camera publishの実機確認はT08-02）。
   - fixture / live: 両方。実装済みtransportはliveで確認し、未実装surfaceの間もfixture開発は継続する。
+  - Implementation review (2026-09-01):
+    - status: `code_ready_unverified`
+    - commits: `8b94c13`, `db6b4d3`, `04fa806`
+    - production scope: 固定source SHA、production/smoke別runtime pin、health/token・camera-only/capacity 1/同時推論1・Guidance contract/state machineの実装済みsurface、共有HTTPS staging・実AIpush・1〜2fps sampling・4 HTTP endpointのblockerを、owner・契約・必要時期・解除条件付き監査文書とmachine-readable availability資料へ固定した。Swift/backend代替実装とbrowser VITE手順は追加していない。
+    - tests authored: `scripts/lint_t03_05_backend_audit.py`, `scripts/test_lint_t03_05_backend_audit.py`（source/pin/smoke境界、implemented/blocker metadata、HTTP/Agent availability、OpenAPI method/version、Phase 1文言driftのpositive/negative検証）
+    - source review: `P0 none`
+    - execution: `build/test not run; deferred to Phase 2`
+    - pending gates: 専用testと参照元Python suite、fixture/live、保護stagingのhealth/token claim/Room join/camera subscribe、実AI→lossy/reliable push、1〜2fps sampling、4 endpoint提供後のprotected contract smoke、最終受け入れ。deviceはT03-05では不要
 
 ## 4. 型安全な撮影状態遷移
 
@@ -402,7 +414,8 @@ taskを`[x]`へ変更するcommitには、既存の最終`Verification`記録と
   - 実機確認が必要か: 必須。回転前後のpreview/撮影/採寸point対応を確認する。
   - fixture / live: 両方。
 
-- [ ] **T05-03 権限拒否・中断・画像選択fallbackを扱う**
+- [x] **T05-03 権限拒否・中断・画像選択fallbackを扱う**
+  - 作業開始記録 (2026-09-01): Lane B。参照artifactはT05-01の`CaptureSessionController`/`AVFoundationCaptureDriver`とT04-02のsession-scoped store境界。所有fileは`CaptureKit`のrecovery UI/import/lifecycle実装、app内の同一撮影flow回復導線、対応unit/UI test。permission matrix、中断通知、picker cancel/failure/stale session、Settings/選択fallbackをauthorし、build/testはPhase 2へ延期する。実機の拒否→Settings/画像選択、電話相当中断、foreground復帰と、選択画像がT09/採寸の同一経路を通る統合・live・acceptance gateは未完のまま保持する。
   - 担当する責務: レーンBが、カメラを使えない場合も同じ4枚フローを維持する。
   - 依存する先行タスク: T05-01, T04-02。
   - 実装対象: permission UI、Settings導線、PhotosPicker/file import adapter、AVCaptureSession interruption/runtime error、foreground復帰。
@@ -410,6 +423,7 @@ taskを`[x]`へ変更するcommitには、既存の最終`Verification`記録と
   - 自動テスト方法: permission state matrix、interruption notification、picker stub、cancel/retryのstate testとXCUITest。
   - 実機確認が必要か: 必須。拒否→Settings/画像選択、電話相当の中断、background復帰を確認する。
   - fixture / live: 両方。
+  - 実装記録 (2026-09-01): 状態は`code_ready_unverified`。production commitsは`8b937f4`、`f43cc79`、test commitは`451c2b6`。permission matrix、Settings、PhotosPicker/file original import、cancel/failure/stale session、中断/runtime error/background復帰、同一session storeとT09/measurement route、同一AVCaptureSession observer、root overlay/cleanupを実装し、限定source reviewは`P0 none`。Phase 1のためbuild/test/XCUITestは未実行。fixture/live integration、拒否→Settings/画像選択、電話相当中断、foreground復帰、各slot継続の実機・acceptance gateは未完了。
 
 ## 6. 固定2Dガイドと撮影UI
 
@@ -467,35 +481,40 @@ taskを`[x]`へ変更するcommitには、既存の最終`Verification`記録と
   - 実機確認が必要か: 必須。5分間publishしながら複数回撮影し、停止/再開とthermal/memoryを記録する。
   - fixture / live: live。
 
-- [ ] **T08-02 token取得、Room接続、camera publish、助言購読を接続する**
+- [x] **T08-02 token取得、Room接続、camera publish、助言購読を接続する**
+  - 作業開始記録 (2026-09-01): Lane C（LiveKit dependency固定のみLane A共有fileをintegration ownerとして直列所有）。参照artifactはHTTP v1 token contract、T04-03 guidance filter、T08-01 ADRとLiveKit Swift `2.16.0`。所有fileは`LiveKitBridge`のtoken/Room/data/publish adapter、T05のlossless sample handoff、`Packages/Package.swift`、対応fake transport/unit test。mock token、join/leave、buffer track publish、lossy finite packet、reliable opaque packet、invalid/stale/cancel/no-pollingをauthorし、build/testはPhase 2へ延期する。共有Cloud credential、Agent実AI→push、実機publish/subscription/push、5分thermal/memoryとp95は外部/live/device/acceptance gateとして残す。
   - 担当する責務: レーンCが、秘密を持たずにstateful Agentとの持続接続を成立させる。
   - 依存する先行タスク: T03-02, T03-03, T03-05, T04-03, T08-01。
-  - 実装対象: 実装済み`/api/livekit-token`へのsession ID request、Room join/leave、local video publish、lossy/reliable data受信、GuidanceEvent strict decode、接続status adapter。Agent側の実AI→packet配線は参照元backendの外部依存としSwiftへ実装しない。
-  - 完了条件: 実装済みtoken issuerとcamera-only subscriberを再利用して実機camera trackをAgentがsubscribeし、参照元backend側のpush配線提供後に、定期HTTP/静止画pollingなしで有限助言がpushされる。token/API secretを保存・logせず、観測→表示p95 2秒の計測値を取得できる。
+  - 実装対象: 実装済み`/api/livekit-token`へのsession ID request、Room join/leave、local video publish、lossy/reliable data受信、GuidanceEvent strict decode、接続status adapter。Agent側の実AI→packet配線は現行参照元backendを再利用しSwiftへ実装しない。
+  - 完了条件: 実装済みtoken issuer、camera-only subscriber、現行push配線を再利用して実機camera trackをAgentがsubscribeし、定期HTTP/静止画pollingなしで有限助言がpushされる。token/API secretを保存・logせず、観測→表示p95 2秒の計測値を取得できる。
   - 自動テスト方法: mock token endpoint、fake Room delegate、invalid packet、publish/leave idempotency、HTTP request recorderでanalyze-live pollingがないことを検証する。
   - 実機確認が必要か: 必須。共有LiveKit Cloud＋Agentでpublish/subscription/pushを確認する。
   - fixture / live: live（packet処理はfixtureでも自動確認）。
   - 進捗・blocker記録 (2026-09-01): partial core `8b542ec feat(t08-02): add live guidance connection core`をmainへ統合済み。token request、Room transport protocol、join/leave、app-produced publish request、lossy `GuidanceEvent` strict decode/filter、未確定reliable bytesのopaque境界、generation/session/request stale guard、typed unavailableと未実行test codeは安定artifact。taskは未チェックで、Lane A/CによるLiveKit Swift SPM固定・実Room adapter、T05/T08-01 original `CMSampleBuffer` handoff、参照元shared backend ownerによるAgent guidance push、共有Cloud credential、実機publish/subscription/pushとp95証跡が解除条件である。fixture/mock成功をlive成功へ置換しない。
+  - 実装記録 (2026-09-01): 状態は`code_ready_unverified`。production commitsは`d80b647`、`5a41c3e`、`f43cc79`、test commitsは`58f3ef7`、`5a41c3e`。LiveKit Swift `2.16.0` exact SPM、ephemeral token client、Room join/leave、app-produced `BufferCapturer` publish、capacity-1 original `CMSampleBuffer` handoff、lossy strict guidance/reliable opaque/status、stale/cancel/no-polling、App root start/leaveを実装。現行backend `main`を2026-09-01 01:48 JSTに読み取り専用確認（`a25a8542664b4bd3bfe3ff00171ea56cd373966c`）し、topicなしpacketを閉じたshapeで明示互換化した。限定source reviewは`P0 none`、build/testはPhase 1で未実行。共有Cloud credential、provider設定、実機publish/subscription/push、5分thermal/memory、p95、live acceptanceは未完了で、fixture結果を代用しない。
 
-- [ ] **T08-03 再接続、reliable同期、Agent不在fallbackを作る**
+- [x] **T08-03 再接続、reliable同期、Agent不在fallbackを作る**
   - 担当する責務: レーンC/Aが、ネットワーク断で進捗を失わず、古い助言で巻き戻らないようにする。
   - 依存する先行タスク: T04-03, T08-02。
-  - 実装対象: reconnect policy/status、現在shot＋last sequenceのRPC同期、step/受理用reliable message、Agent不在表示、manual retry。
-  - 完了条件: 接続断中もガイド・ローカル品質・shutter・受理slotを維持し、復旧後は同期した新sequenceから再開する。live断をfixture結果へ置換しない。
+  - 実装対象: reconnect policy/status、現在shot＋last sequenceのRPC同期、step/受理用reliable message、Agent不在表示、manual retry。app→Agent context v1は`type=capture_context`、`sessionId`、1から単調増加する`revision`、`shot`、固定順で重複のない`acceptedShots`、nullableな`lastGuidanceSequence`だけを含み、画像・自由文・confidence・遷移commandを含めない。送信topicは`teamd.capture.context.v1`、reliable固定とする。
+  - 完了条件: 接続断中もガイド・ローカル品質・shutter・受理slotを維持し、初回join、shot受理、retake、復旧後に最新contextを最1件reliable送信する。復旧後は同期した新sequenceから再開し、live断をfixture結果へ置換しない。共有backendがこのv1 contextを受信し`AgentRuntime.set_shot()`へ反映するlive gateはbackend ownerが満たす。
   - 自動テスト方法: fake Roomでdisconnect→逆順packet→reconnect→rehydrateを再現し、state不変とdedupeを検証する。
   - 実機確認が必要か: 必須。機内モード/回線切替/Agent停止・復旧をrunbookで確認する。
   - fixture / live: 両方。
+  - 実装記録 (2026-09-01): 状態は`code_ready_unverified`。production commitは`43ab917`、test commitは`4e97111`。strictな`capture_context` v1、exact reliable topic、正数単調revision、canonical accepted slots、最終受理sequence、initial join・shot更新・retake・reconnectのlatest-only同期、送信失敗状態とmanual retry、generation/request/session/room/attempt stale guard、LiveKit Swift 2.16.0 publish adapterを実装し、focused codec/initial/update/reconnect/failure/stale/latest-only test codeを追加した。限定source reviewは`P0 none`、`git diff --check`は成功、build/testはPhase 1で未実行。2026-09-01 02:28 JSTに最新backend default branchを読み取り専用確認し、`AgentRuntime.set_shot()`は存在するがapp data/RPC受信から呼ぶhandlerは未実装だった。共有backend ownerによるhandler接続、protected live smoke、機内モード・回線切替・Agent停止復旧の実機証跡は残るgateで、fixture成功を代用しない。
 
 ## 9. 撮影後AI判定
 
-- [ ] **T09-01 front/back/tagの高解像度判定clientを作る**
+- [x] **T09-01 front/back/tagの高解像度判定clientを作る**
+  - 作業開始記録 (2026-09-01): Lane C。参照artifactはHTTP/OpenAPI v1 `analyze-shot` multipart contractとT03-01 `ShotAssessment` strict codec。所有fileは`APIClient`のshot assessment provider/clientと対応unit test。multipart field/bytes/content type、全strict response、requested-shot矛盾、20秒timeout/cancel、measurement拒否、stale completionをauthorし、build/testはPhase 2へ延期する。参照元shared backendのendpoint提供、3種正常/誤種別/品質不良のlive実機確認は外部/live/device/acceptance gateとして残す。
   - 担当する責務: レーンCが、撮影前助言と最終受理を分離し、strictな`ShotAssessment`だけを返す。
   - 依存する先行タスク: T03-01, T03-02, T03-05, T05-01。
-  - 実装対象: Swift側の`/api/analyze-shot` multipart client、`requestedShot`、画像normalization policy、timeout/cancel、response validation、provider protocol。endpoint本体は参照元で未実装の外部依存であり、このrepoでは作らない。
+  - 実装対象: Swift側の`/api/analyze-shot` multipart client、`requestedShot`、画像normalization policy、timeout/cancel、response validation、provider protocol。endpoint本体は現行参照元backendを再利用し、このrepoでは作らない。
   - 完了条件: requestedShotをfront/back/tagに限定し、measurementを送らない。未知field/enum、欠落、requested shotと矛盾する`ok`を受理せず、高解像度結果だけをslot受理判定へ渡す。
   - 自動テスト方法: URLProtocol mockでmultipart field/bytes/content-type、全valid/invalid response、20秒timeout/cancel、measurement送信拒否を検証する。
   - 実機確認が必要か: 必須。3種の正常・誤種別・品質不良を共有backendで確認する。
   - fixture / live: 両方。
+  - 実装記録 (2026-09-01): 状態は`code_ready_unverified`。production commitsは`417c499`、`8c4adaa`、`5c50995`、`f43cc79`、対応test codeは`417c499`、`8c4adaa`、`5c50995`。front/back/tag限定、measurement事前拒否、原本bytesとstable idempotency、20秒timeout/cancel、全有限strict response、requested-shot矛盾、provider/status/content-type、stale completion、binary非保持、session store handoffを実装。現行backend `main`を2026-09-01 01:48 JSTに読み取り専用確認（`a25a8542664b4bd3bfe3ff00171ea56cd373966c`）し、凍結v1を残したまま`file` partと`detail` error envelopeの明示compatibility contractを追加した。限定source reviewは`P0 none`、build/testはPhase 1で未実行。共有backend/provider credential、JPEG/PNG/HEIC境界のlive確認、3種正常・誤種別・品質不良、実機・acceptance gateは未完了。
 
 - [ ] **T09-02 retry/error UXと進捗不変性を接続する**
   - 担当する責務: レーンA/B/Cが、暗い・ぼけ・欠け・tag読取不能・誤種別・service errorを有限理由で回復させる。
@@ -508,7 +527,7 @@ taskを`[x]`へ変更するcommitには、既存の最終`Verification`記録と
 
 ## 10. 4枚固定フローとfallback
 
-- [ ] **T10-01 4slotの固定順・撮り直し・採寸準備を統合する**
+- [x] **T10-01 4slotの固定順・撮り直し・採寸準備を統合する**
   - 担当する責務: レーンA/Bが、常に同じ順序と完了条件で撮影を進める。
   - 依存する先行タスク: T04-01, T04-02, T06-02, T09-02。
   - 実装対象: slot repository、progress UI、front/back/tag受理、measurement preparation checklist（背面を上、襟/袖/裾を広げてしわ/折れを伸ばす、無地で高contrastの床、markerを100%印刷して定規確認、同一平面の右下へ衣類から30mm以上離す、真上から両方の全体を写す）、`4/4`開始guard。
@@ -516,6 +535,7 @@ taskを`[x]`へ変更するcommitには、既存の最終`Verification`記録と
   - 自動テスト方法: happy path、各step retake、途中再試行、他slot保持、3枚だけでedit不可のstate/XCUITest。
   - 実機確認が必要か: 必須。カメラと画像選択の両経路で順序を確認する。
   - fixture / live: 両方。
+  - 実装記録 (2026-09-01): 状態は`code_ready_unverified`。production/test commitは`86af683`。camera-first rootへ`CaptureCoachView`を接続し、手動shutterと写真選択を同じ原本保存・strict `ShotAssessment`・app-owned受理経路へ統合した。`nextAction`を遷移に使わず、front→back→tag→measurement prep、同一step rejection、same-image retry、stale assessment破棄、他slot保持retake、finite guidance表示、現在shot/accepted slotsのcontext同期、採寸準備checklistを実装した。focused state test codeはhappy path、rejection、provider retry、stale、retake、全`ShotNextAction`非遷移を含む。限定source reviewは`P0 none`、`git diff --check`とsecret static scanは成功、build/test/XCUITestはPhase 1で未実行。T11〜T13が所有する4枚目のmarker validation・採寸補正/明示承認、T14/T15のmask→透明previewのApp接続、fixture/live、実機camera/import/guidance/context/VoiceOverは残るintegration・acceptance gateである。
 
 - [ ] **T10-02 共通fallbackを状態機械へ統合する**
   - 担当する責務: レーンA/Fが、権限、Agent、AI、採寸、mask、背景生成の失敗を成功扱いせず回復可能にする。
@@ -547,7 +567,18 @@ taskを`[x]`へ変更するcommitには、既存の最終`Verification`記録と
   - owner/release condition: physical device operator/user, rights/PII-cleared 30 distributed captures, complete CSV annotations + ruler/print-scale evidence; then review before checkbox
   - limitations: T11-02/T11-03 remain blocked, no OpenCV adoption decision
 
-- [ ] **T11-02 Vision/Core Image/Accelerate/simdでmarker・輪郭・射影補正PoCを行う**
+- Blocked implementation review (2026-09-01):
+  - status: `blocked`（checkboxは`[ ]`のまま）
+  - commits: `5e93c65`
+  - separable scope: 既存schema v2・18 synthetic case・generator・manifest・marker PDF・全既知worktree/branchの物理logを監査し、外部evidence root、30枚の必須分布、物理iPhone、annotation JSON、rights/PII、100%印刷・定規50.0mm marker evidence、file signature/hashをfail-closedで検証するimport/annotation gateとrunbookを実装した。権利不明binaryや物理写真は追加していない。
+  - tests authored: `scripts/t11_01_measurement_corpus/test_lint_corpus.py`（0/30 blocked、外部30枚matrix ready、外部hash、rights未確認・改ざん・repository内evidence root拒否）
+  - source review: `P0 none`（対象は分離可能なsource/doc候補。物理gate未充足は下記blockerとして維持）
+  - execution: `swift build`、`swift test`、`xcodebuild`、XCUITest、app起動は未実行。source-only corpus/manifest/doc/secret/`git diff --check`のみ実施
+  - blocker: rights/PII-cleared iPhone物理corpus `0/30`、review済みmarker print `0`、定規確認済み50.0mm evidenceなし
+  - owner/release condition: 物理端末operator/userがfrozen markerを100%印刷して50.0mm定規証跡を保持し、必須matrixのiPhone写真30枚以上を権利・PII確認付きで取得・完全annotationする。外部root strict gateとtask owner reviewが完了するまでT11-01はblockedで、T11-03の採否根拠に使用しない
+
+- [x] **T11-02 Vision/Core Image/Accelerate/simdでmarker・輪郭・射影補正PoCを行う**
+  - 作業開始記録 (2026-09-01): Lane D。参照artifactはT11-01 synthetic corpus schema v2と既存Apple PoC commits `4c8eed4`/`e5ea981`。所有fileは`MeasurementKit.swift`、`AppleMeasurementPipelineTests.swift`、T11-02 ADR/raw measurement記録で、direct childの専用worktreeへ排他的に委譲する。決定的corpus分類、corner/scale境界、orientation、failure、再現性、性能計測用test codeをauthorし、build/testはPhase 2へ延期する。物理corpus 0/30のためApple採否、marker検出率95%以上、無効scale 0、px/cm誤差1%以下、基準実機p95 1秒以内、memoryはdevice/acceptance gateとして未完のまま保持する。
   - 担当する責務: レーンDが、OpenCVなしで二重正方形検出と安全なscale取得が可能か最初に検証する。
   - 依存する先行タスク: T11-01。
   - 実装対象: `VNDetectRectanglesRequest`/`VNDetectContoursRequest`候補、二重輪郭検証、corner順序、Core Image perspective correction、simd座標変換、foreground/contrast segmentation候補、失敗理由分類。
@@ -555,6 +586,14 @@ taskを`[x]`へ変更するcommitには、既存の最終`Verification`記録と
   - 自動テスト方法: annotationとのcorner/scale比較、境界値、失敗code、再現性、性能measure testを同一corpusで実行する。
   - 実機確認が必要か: 必須。基準実機でaccuracy/latency/memoryを測る。
   - fixture / live: fixture＋実機offline解析。
+  - Implementation review (2026-09-01):
+    - status: `code_ready_unverified`
+    - commits: `4c8eed4`, `e5ea981`, `2230664`, `05316bc`
+    - production scope: Visionの二重正方形候補と衣類輪郭、Core Imageの全EXIF orientation正規化とmarker射影補正、Accelerate品質判定、simd射影、strict convexなcorner canonicalization、有限failure分類、決定的scale算出、Apple候補ADR/raw計測protocolを実装した。OpenCVは追加せず、Apple採用判断を物理gateまで保留した。
+    - tests authored: `Packages/Tests/MeasurementKitTests/AppleMeasurementPipelineTests.swift`（18-case corpus分類、全failure、79/80px・16/17px・0.649/0.650・23/24px境界、corner全24 permutation、全8 EXIF orientation、scale相対誤差1%以内、determinism、Vision/Core Image/Accelerate/simd、raw per-case latency/p95、XCTest clock/memory metric）
+    - source review: `P0 none`
+    - execution: `build/test not run; deferred to Phase 2`
+    - pending gates: Phase 2 package/app compileとfocused/full fixture test、T11-01のrights/PII-cleared物理corpus30枚以上と定規50.0mm証跡、基準実機の検出率95%以上・無効scale採用0・px/cm誤差1%以下・p95 1秒以内・memory、T11-03 Apple/OpenCV採否、T18-03の補正後±1.0cm acceptance
 
 - [ ] **T11-03 OpenCV iOS採用判断ゲートを通す**
   - 担当する責務: レーンD/Aが、精度未達の場合だけ追加依存を採用し、理由とコストを可視化する。
@@ -564,6 +603,15 @@ taskを`[x]`へ変更するcommitには、既存の最終`Verification`記録と
   - 自動テスト方法: どちらのengineも同じcontract test suiteを通し、選択engine以外がproduction dependency graphへ混入しないことをCIで検査する。
   - 実機確認が必要か: 必須。選択engineでT11-02の基準を再測定する。
   - fixture / live: fixture＋実機offline解析。
+  - Blocked implementation review (2026-09-01):
+    - status: `blocked`（checkboxは`[ ]`のまま、engine未選択）
+    - commits: `8f4dd37`
+    - separable scope: Apple-firstの有限decision contract、同一物理corpus evidence evaluator、protocol-only OpenCV wrapper境界、固定基準、binary size/build time/artifact source+SHA/license/NOTICE/privacy/明示承認入力、build-free JSON decision harness、OpenCV dependency/binary guard、ADRを実装した。OpenCV dependency/binary、OpenCV.js/WASM/Web Worker/ArUcoは追加していない。
+    - tests authored: `Packages/Tests/MeasurementKitTests/MeasurementEngineDecisionTests.swift`（物理evidence不足、95%/1%/1秒inclusive境界、Apple選択、same-corpus、OpenCV cost/approval、OpenCV選択、両engine未達fallback、共通有限contract）、`scripts/test_t11_03_decision_gate.py`（現状blocker、捏造decision、早期dependency、blocker drift、Apple pass、Apple fail/OpenCV missing）
+    - source review: `P0 none`（物理比較・最終採否がないためタスク全体は未完成）
+    - execution: build/test/fixture/app/実機測定は未実行。source-only decision/package graph/JSON/secret/`git diff --check`のみ実施
+    - blocker: T11-01物理corpus `0/30`、定規50.0mm・rights/PII・完全annotation・同一corpusのaccuracy/latency/memory evidenceなし
+    - owner/release condition: 物理端末operator/userとLane D/AがT11-01 evidenceを完成し、Apple raw指標を記録する。Appleが固定基準を外した場合だけ同一corpusでpinned OpenCV iOS artifactと配布コストを比較し、明示承認を含むADRでApple/OpenCV/product fallbackのいずれかを確定する
 
 ## 12. 射影補正、px/cm換算、着丈・身幅計算
 
@@ -575,6 +623,15 @@ taskを`[x]`へ変更するcommitには、既存の最終`Verification`記録と
   - 自動テスト方法: thresholdの直前/一致/直後、corner順序、homography round-trip、既知5.0cmのscale、invalid時に値を返さないことを全fixtureで検証する。
   - 実機確認が必要か: 必須。異なる距離/傾きでscale再現性を確認する。
   - fixture / live: 両方。
+  - Blocked implementation review (2026-09-01):
+    - status: `blocked`（checkboxは`[ ]`のまま）
+    - commits: `71f2525`, `5a63ce7`
+    - separable scope: T11-02の安定contractに基づくengine-neutralなupright image→品質→marker検証→garment mask→Double homography/full-plane perspective correction→px/cm pipeline、image/mask同時補正契約、有限result/error、stage間cancellation、逆変換を実装した。invalid時はscale・補正画像・maskを公開しない。選択engine adapter/dependency bindingは追加していない。
+    - tests authored: `Packages/Tests/MeasurementKitTests/MeasurementGeometryPipelineTests.swift`（79/80px、16/17px、0.649/0.650、23/24px、dark/blur、全体in-frame、mask寸法、全marker/segmentation failure、corner 24 permutation、homography round-trip/退化、5.0cm scale、image/mask補正、renderer/stage error、cancellation、invalid no-output）
+    - source review: `P0 none`（engine-neutral候補内。選択engineの製品scope未完成は下記blockerとして維持）
+    - execution: build/test/fixture/live/app/実機は未実行。source-only Swift/doc/secret/`git diff --check`のみ実施
+    - blocker: T11-03がengine未選択で、production adapter/dependency bindingと同一物理corpusのscale再現性証跡がない
+    - owner/release condition: T11-01物理evidenceとT11-02実機指標を揃え、T11-03 Lane D/Aがengineを決定し、選択adapter/bindingを同じcontractへ接続する。Phase 2 compile/focused/full test、fixture/live統合、距離・傾き別の実機scale再現性を完了するまでT12-01はblocked
 
 - [x] **T12-02 測定点提案APIを1回だけ呼びstrictに検証する**
   - 担当する責務: レーンC/Dが、補正済み画像から意味的4端点だけを取得し、cm決定を端末幾何に残す。
@@ -608,14 +665,23 @@ taskを`[x]`へ変更するcommitには、既存の最終`Verification`記録と
   - 実機確認が必要か: 必須。片手操作、zoom、細かな端点補正を確認する。
   - fixture / live: 両方。
 
-- [ ] **T13-02 endpoint検証、範囲警告、明示承認を作る**
+- [x] **T13-02 endpoint検証、範囲警告、明示承認を作る**
+  - 作業開始記録 (2026-09-01): Lane D/A。参照artifactはT13-01 endpoint editor、T12-03 geometry、app-owned `WorkflowEvent.approveMeasurementCV`、およびR5の短辺2.0% endpoint tolerance。所有fileはT13-02専用validation/approval stateとSwiftUI confirmation、endpoint editor接続、対応focused testで、direct childの専用worktreeへ排他的に委譲する。valid/invalid、tolerance直前/一致/直後、inclusive範囲境界、warning confirm/cancel、stale edit、承認eventをauthorし、build/testはPhase 2へ延期する。T13-01/T12 pipeline統合、fixture/live、invalid handle/範囲外再確認の実機、accuracy/acceptance gateは未完のまま保持する。
   - 担当する責務: レーンD/Aが、不正な線を確定させず、警告値は再確認後にのみ許可する。
   - 依存する先行タスク: T13-01。
   - 実装対象: image/garment領域検査、`ENDPOINTS_INVALID`、着丈20...100cm/身幅20...80cm warning、confirm dialog、`approved_cv` event。
-  - 完了条件: 画像外または衣類領域から大きく外れた点では承認不能。「大きく外れた」の数値toleranceを実装前に契約へ固定し、範囲外値は警告するが二段階の再確認後は承認でき、線と数値の明示操作だけが`approved_cv`を作る。
+  - 完了条件: 画像外、または補正画像pixel空間で衣類polygon境界から補正画像短辺の2.0%を超えて外れた点では承認不能とし、polygon内・境界上・短辺の2.0%以内（ちょうど2.0%を含む）は有効とする。範囲外値は警告するが、同一の線と数値に対する二段階の再確認後は承認でき、線と数値の明示操作だけが`approved_cv`を作る。
   - 自動テスト方法: valid/invalid endpoint、固定したtoleranceの直前/一致/直後、範囲境界、warning confirm/cancel、承認eventのstate test。
   - 実機確認が必要か: 必須。invalid handleと範囲外再確認を確認する。
   - fixture / live: 両方。
+  - Implementation review (2026-09-01):
+    - status: `code_ready_unverified`
+    - commits: `98873ba`, `c3e665a`, `1f69fbe`
+    - production scope: 補正画像専用garment polygon、短辺2.0% inclusive endpoint検証、`ENDPOINTS_INVALID`、着丈20...100cm/身幅20...80cm inclusive範囲、同一線・数値・polygonへ束縛した二段階warning confirmation、cancel/edit/stale失効、`approved_cv`とapp-owned event、承認後編集によるworkflow未承認化とedit gate閉鎖、日本語SwiftUI alert/44pt/VoiceOver表示を実装した。
+    - tests authored: `Packages/Tests/MeasurementKitTests/MeasurementEndpointApprovalTests.swift`、`MeasurementEndpointEditorTests.swift`、`Packages/Tests/DomainKitTests/CaptureWorkflowTests.swift`（polygon valid/invalid、2.0%直前/一致/直後、範囲上下限/直外、confirm/cancel/stale、承認event/status、承認後編集1回だけのrevoke event、4slot保持とedit gate閉鎖）
+    - source review: `P0 none`（初回reviewの承認後workflow revoke欠落を`1f69fbe`で修正し、そのP0差分を再確認）
+    - execution: `build/test not run; deferred to Phase 2`
+    - pending gates: Phase 2 package/app compileとfocused/full test、T12-01のcorrected polygon・T13-01 editor・session store/root workflow統合、fixture/live両flow、invalid handle・範囲外再確認・44pt・VoiceOver・Dynamic Type・zoomの実機、AC-MEAS-001/AC-GATE-001/AC-APPROVAL-001/AC-DEVICE-001 acceptance
 
 - [ ] **T13-03 撮り直し・4点手配置・数値手入力fallbackを作る**
   - 担当する責務: レーンDが、marker/segmentation/AI提案失敗をfixture成功に置換せず完走可能にする。
@@ -638,7 +704,7 @@ taskを`[x]`へ変更するcommitには、既存の最終`Verification`記録と
   - fixture / live: 両方。
   - 実装記録 (2026-09-01): `0d7ea6d feat(t14-01): add front-only garment mask client`をmainへ統合済み。最新の明示運用により実装と対応test codeのcommit時点でチェックし、作業状態は`code_ready_unverified`。build/testは未実行で、session/app統合、未実装の共有`/api/remove-background`、protected contract smoke、fixture/live、実機の正常/停止証跡は残るgateである。
 
-- [ ] **T14-02 許可styleから背景だけを生成する**
+- [x] **T14-02 許可styleから背景だけを生成する**
   - 担当する責務: レーンC/Eが、商品情報を生成APIへ渡さず空の撮影背景候補を取得する。
   - 依存する先行タスク: T03-02, T03-05, T10-01, T13-02またはT13-03。
   - 実装対象: style allowlist、人物/衣類/ハンガー/文字/ロゴを除外するbackend固定prompt契約、Swift側の`/api/generate-background` request、image validation、60秒timeout/retry、ライセンス確認済み固定背景fallback。endpoint本体は参照元で未実装の外部依存とする。
@@ -646,6 +712,14 @@ taskを`[x]`へ変更するcommitには、既存の最終`Verification`記録と
   - 自動テスト方法: request bodyのbinary/image field不在、未知style拒否、timeout/invalid image/fixed background fallbackを検証する。
   - 実機確認が必要か: 必須。共有backendの生成とnetwork failureを確認する。
   - fixture / live: 両方。
+  - Implementation review (2026-09-01):
+    - status: `code_ready_unverified`
+    - commits: `32ab6f8`, `ed97162`
+    - production scope: `clean-white` allowlistとbackend固定prompt除外policy、4枚＋採寸承認gate、text-only `{styleId}` request、60秒timeout・stable idempotency、ephemeral transport、strict status/content-type/ProviderError、bounded opaque PNG検証、cancel/stale抑止、live unavailable時のzero request、retryと許諾・inventory証跡付き固定背景descriptorの回復境界を新規client/policyへ実装した。商品原本・mask・tag・measurement bytes、未許諾asset、fixture fallbackは追加していない。
+    - tests authored: `Packages/Tests/APIClientTests/BackgroundGenerationClientTests.swift`（allowlist/prompt policy、gate、request body privacy、60秒timeout/idempotency、retry policy、PNG/content-type/provider error、cancel/stale、live available/unavailable、固定背景証跡、metadata-only stateの14 focused cases）
+    - source review: `P0 none`（初回reviewのretry/fixed-background P0は`ed97162`で修正し、その修正差分を確認済み）
+    - execution: `build/test not run; deferred to Phase 2`
+    - pending gates: package compile/focused test、T10/T13 session/app統合、共有`/api/generate-background`実装とprotected live smoke、実在する固定背景のlicense/inventory採用判断、fixture/live、共有backend正常/回線失敗の実機確認、最終受け入れ
 
 ## 15. 元商品画素を保持する画像合成
 
@@ -658,6 +732,7 @@ taskを`[x]`へ変更するcommitには、既存の最終`Verification`記録と
   - 実機確認が必要か: 必須。高解像度frontで表示品質、memory、時間を確認する。
   - fixture / live: 両方。
   - 実装記録 (2026-09-01): `8eaf7f1 feat: integrate deterministic front image compositor`と`bf5e15a feat: add Apple image compositor adapter`をmainへ統合済み。productionと対応test codeのcommit時点でチェックし、作業状態は`code_ready_unverified`。統合後build/pixel test、T14-02背景との統合、高解像度frontの実機品質・memory・時間証跡は残るgateである。
+  - 追加実装記録 (2026-09-01): `db9b786`で、元front RGBを保持しmask値だけをstraight alphaにするbackground-independent cutout、Apple `CGImage` adapter、固定checkerboard・日本語説明・VoiceOver単一semantic labelを持つ非操作`TransparentCutoutPreview`を追加した。front provenance、alpha境界、全8 orientation、determinism、cancellation、invalid mask、Apple pixel/semanticsのfocused test codeをauthor済み。限定source reviewは`P0 none`、`git diff --check`は成功、build/testはPhase 1で未実行。T14有効mask直後かつ背景生成前のApp/session接続、不正mask非表示、T16 approval/exportへの混入防止、実機表示・memory・VoiceOverは残るgateである。
 
 - [x] **T15-02 商品画素provenanceとmask不正を自動検証する**
   - 担当する責務: レーンE/Fが、「商品RGBは元frontのみ」を回帰不能なテスト契約にする。
@@ -751,7 +826,8 @@ taskを`[x]`へ変更するcommitには、既存の最終`Verification`記録と
 
 ## 19. CI、runbook、ライセンス、最終受け入れ確認
 
-- [ ] **T19-01 iOS CIとmerge gateを固定する**
+- [x] **T19-01 iOS CIとmerge gateを固定する**
+  - 作業開始記録 (2026-09-01): Lane A/F。参照artifactはT02-03のXcode 26.2 (17C52)/`macos-26`/iOS 26.2 fixture baseline、既存HTTP v1/fixture/license lint、workspace/shared scheme。所有fileはT19-01専用CI workflow、fixture CI/secret scan/CI contract lintとself-test、merge-gate文書で、direct childの専用worktreeへ排他的に委譲する。clean resolve/build/package test/app unit/Simulator XCUITest、fixture hash/schema drift/secret/license/warning gate、artifact/no-shared-cache方針をauthorし、実行はPhase 2/hosted CIへ延期する。T17全suiteとの統合、hosted clean run、required check branch protection、保護environmentの明示live smokeはintegration/external gateとして未完のまま保持する。
   - 担当する責務: レーンA/Fが、再現可能なbuild/test/contract/license検査をPR必須条件にする。
   - 依存する先行タスク: T02-03, T17-01, T17-02, T17-03。
   - 実装対象: pinned Xcode runner、resolve/build/test、Simulator XCUITest、fixture hash、schema drift、secret scan、license inventory、artifact保存、cache方針。
@@ -759,8 +835,16 @@ taskを`[x]`へ変更するcommitには、既存の最終`Verification`記録と
   - 自動テスト方法: CI自身のrequired checksをbranch protectionで強制し、意図的なschema/hash/secret違反fixtureでjobが失敗することを確認する。
   - 実機確認が必要か: 不要。
   - fixture / live: fixture必須、live smokeは保護環境で明示実行。
+  - Implementation review (2026-09-01):
+    - status: `code_ready_unverified`
+    - commits: `befffda`
+    - production scope: Xcode 26.2 (17C52)/`macos-26`/iOS 26.2 iPhone 17 Proを固定し、clean package/Xcode resolve、package build/full test、app build-for-testing/unit/XCUITest、fixture hash・HTTP schema・secret・license・warning gate、7/14日artifact、no-shared-cache、SHA固定actionを持つPR CIを実装した。live smokeは保護environmentの明示`workflow_dispatch`だけに分離し、response/tokenをlog/artifactへ残さない。required check名とbranch protection手順も固定した。
+    - tests authored: `scripts/test_lint_t19_01_ci.py`、`scripts/test_t19_01_failure_gates.py`（workflow/action/secret境界drift、意図的schema timeout・marker hash・credential違反が各gateで失敗し、secret値を出力しないnegative path）
+    - source review: `P0 none`
+    - execution: `build/test not run; deferred to Phase 2`
+    - pending gates: hosted GitHub CIのclean実run、T17-01〜T17-03統合後のfull suite、repository administratorによる`T19-01 Source gates`/`T19-01 Fixture suite` required check設定とblocked-merge証跡、`teamd-ios-live-smoke`保護environment設定と明示live smoke
 
-- [ ] **T19-02 開発・任意local backend・実機・障害対応runbookを完成させる**
+- [x] **T19-02 開発・任意local backend・実機・障害対応runbookを完成させる**
   - 担当する責務: レーンF/Cが、新規開発者とデモ担当者が迷わず同じ経路を再現できるようにする。
   - 依存する先行タスク: T03-03, T18-01, T18-03。
   - 実装対象: Xcode-only fixture、共有HTTPS/LiveKit Cloud live、自動署名の実機手順、任意local FastAPI/rembg手順、preflight/health、timeout/retry、データ消去、障害切り分け。
@@ -768,6 +852,14 @@ taskを`[x]`へ変更するcommitには、既存の最終`Verification`記録と
   - 自動テスト方法: docs command smoke、リンクlint、設定templateと実際のkey一覧差分testを行う。
   - 実機確認が必要か: 必須。別開発者がrunbookだけでfixtureとliveを再現する。
   - fixture / live: 両方。
+  - Implementation review (2026-09-01):
+    - status: `code_ready_unverified`
+    - commits: `553890b`, `bf1775c`
+    - production scope: `docs/runbooks/`へfixture、共有live、実機・demo、任意local FastAPI/rembg、障害切り分け・privacyの再現手順を分離して追加し、現行placeholder/unavailable live surfaceを成功扱いせず、50mm marker・service prewarm・接続/publish/push・採寸・背景/mask・保存・session cleanupをgo/no-go化した。既存CI、project、設定template、license inventoryは変更していない。
+    - tests authored: `scripts/lint_t19_02_runbooks.py`, `scripts/test_lint_t19_02_runbooks.py`（local link/command、現行xcconfig/Info.plist key、contract availability/timeout、secret assignment、optional-local、fixture/live境界、必須sectionのpositive/negative検証）
+    - source review: `P0 none`
+    - execution: `build/test not run; deferred to Phase 2`
+    - pending gates: 専用testとdocs command smoke、別開発者の60分以内fixture再現、共有HTTPS/LiveKit Cloud/Agent/rembg/background live再現、自動署名iPhoneとT18実機・privacy cleanup・demo evidence、最終受け入れ
 
 - [ ] **T19-03 第三者依存・fixture・modelのライセンス表記を確定する**
   - 担当する責務: レーンA/Fが、配布物に必要なnoticeと出典を漏れなく、不要なWeb資産を持ち込まず管理する。

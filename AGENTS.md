@@ -13,7 +13,8 @@ The priority order is the user's latest explicit instruction, `requirements.md`,
 ## Repository boundary
 
 - This repository contains the native iPhone client. Use Swift, SwiftUI, AVFoundation, Swift Concurrency, URLSession, LiveKit Swift SDK, Vision, Core Image, Accelerate, ImageIO, simd, Core Graphics, Swift Testing, XCTest, and XCUITest as selected in `task.md`.
-- Treat `neko-jpg/Team-D` as a read-only source at the SHA recorded in `requirements.md` and `task.md`. Reading, fetching, diffing, and running its tests are allowed; editing, committing, branching, or pushing there are not.
+- Treat `neko-jpg/Team-D` as the read-only upstream backend. Before backend-dependent planning, implementation, review, or live verification, fetch and inspect its current remote default branch, then record the exact inspected commit and retrieval time in the work or verification evidence. Reading, fetching, diffing, and running its tests are allowed; editing, committing, branching, or pushing there are not.
+- Do not permanently pin current backend implementation or availability to a historical SHA. Backend changes must not silently redefine Swift product behavior: surface drift against the versioned Swift contracts, and update affected requirements, schemas, goldens, fixtures, and tasks in a scoped sync when required. Keep commit IDs on frozen contracts, fixtures, audits, and completed verification records as historical provenance.
 - Do not add OpenSpec or copy the source repository's OpenSpec skills, React skill, Web code, Web fixtures without a license decision, or Web build configuration.
 - Do not port Python FastAPI, LiveKit Agent, rembg, or BiRefNet into Swift. Consume the shared backend through versioned contracts.
 - Do not add ARKit, WebXR, 3D AR, 6DoF, automatic capture, OpenCV.js, or WASM. OpenCV for iOS is allowed only after the Apple-framework measurement gate in T11 fails its recorded criteria and the adoption gate is approved.
@@ -74,5 +75,5 @@ The priority order is the user's latest explicit instruction, `requirements.md`,
 ## Git and collaboration hygiene
 
 - Preserve existing user changes and unrelated work. Do not use destructive reset or broad cleanup commands.
-- Use focused commits. Do not combine source snapshot updates, dependency upgrades, generated project changes, and feature behavior without a stated reason.
+- Use focused commits. Do not combine backend contract synchronization, dependency upgrades, generated project changes, and feature behavior without a stated reason.
 - Never push or open external changes unless the user asks. When asked to push, verify local HEAD, upstream HEAD, and a clean worktree afterward.

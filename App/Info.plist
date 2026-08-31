@@ -4,6 +4,8 @@
 <dict>
     <key>NSCameraUsageDescription</key>
     <string>正面・背面・タグ・採寸の写真を撮影するためにカメラを使用します。</string>
+    <key>NSPhotoLibraryAddUsageDescription</key>
+    <string>承認した正面画像だけを写真ライブラリに保存するために使用します。</string>
     <key>TeamDBackendBaseURL</key>
     <string>$(TEAM_D_BACKEND_BASE_URL)</string>
     <key>TeamDLiveKitURL</key>

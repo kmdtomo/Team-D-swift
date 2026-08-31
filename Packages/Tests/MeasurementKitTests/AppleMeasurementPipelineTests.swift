@@ -1,10 +1,12 @@
 import CoreGraphics
 import CoreImage
+import Dispatch
 import DomainKit
 import Foundation
 import ImageIO
 import MeasurementKit
 import Testing
+import XCTest
 
 @Test func t1101ArtifactVersionAndManifestArePinned() throws {
     let manifest = try loadCorpusManifest()
@@ -138,18 +140,22 @@ import Testing
 }
 
 @Test func cornerOrderingAndSIMDProjectionAreStable() throws {
-    let source = try #require(
-        MeasurementQuadrilateral(ordering: [
-            MeasurementPixelPoint(x: 665, y: 715),
-            MeasurementPixelPoint(x: 575, y: 600),
-            MeasurementPixelPoint(x: 560, y: 695),
-            MeasurementPixelPoint(x: 680, y: 615),
-        ])
+    let expected = MeasurementQuadrilateral(
+        topLeft: MeasurementPixelPoint(x: 575, y: 600),
+        topRight: MeasurementPixelPoint(x: 680, y: 615),
+        bottomRight: MeasurementPixelPoint(x: 665, y: 715),
+        bottomLeft: MeasurementPixelPoint(x: 560, y: 695)
     )
-    #expect(source.topLeft == MeasurementPixelPoint(x: 575, y: 600))
-    #expect(source.topRight == MeasurementPixelPoint(x: 680, y: 615))
-    #expect(source.bottomRight == MeasurementPixelPoint(x: 665, y: 715))
-    #expect(source.bottomLeft == MeasurementPixelPoint(x: 560, y: 695))
+    for ordering in permutations(expected.points) {
+        #expect(MeasurementQuadrilateral(ordering: ordering) == Optional(expected))
+    }
+    #expect(MeasurementQuadrilateral(ordering: [
+        MeasurementPixelPoint(x: 0, y: 0),
+        MeasurementPixelPoint(x: 100, y: 0),
+        MeasurementPixelPoint(x: 50, y: 25),
+        MeasurementPixelPoint(x: 0, y: 100),
+    ]) == nil)
+    let source = expected
 
     let square = MeasurementQuadrilateral(
         topLeft: MeasurementPixelPoint(x: 0, y: 0),
@@ -270,25 +276,31 @@ import Testing
     }
 }
 
-@Test func pipelineNormalizesRotatedPixelsIntoUprightCoordinateContract() throws {
+@Test func pipelineNormalizesEveryEXIFOrientationIntoUprightCoordinateContract() throws {
     let manifest = try loadCorpusManifest()
     let fixture = try #require(manifest.cases.first { $0.id == "valid" })
     let annotation = try #require(manifest.annotations[fixture.annotationId])
     let upright = try SyntheticFixtureImage.make(fixture, size: manifest.image.width)
-    let rotatedClockwise = try orientedImage(upright, exifOrientation: 6)
     let pipeline = AppleMeasurementPoCPipeline()
-
-    let baseline = pipeline.analyze(
-        image: upright,
-        proposedEndpoints: annotation.endpointsPx.orderedPoints
-    )
-    let normalized = pipeline.analyze(
-        image: rotatedClockwise,
-        orientation: .left,
-        proposedEndpoints: annotation.endpointsPx.orderedPoints
-    )
-    try assertProduction(outcome: baseline, matches: fixture)
-    try assertProduction(outcome: normalized, matches: fixture)
+    let inverseOrientations: [(Int32, MeasurementImageOrientation)] = [
+        (1, .up),
+        (2, .upMirrored),
+        (3, .down),
+        (4, .downMirrored),
+        (5, .leftMirrored),
+        (6, .left),
+        (7, .rightMirrored),
+        (8, .right),
+    ]
+    for (pixelTransform, inputOrientation) in inverseOrientations {
+        let transformed = try orientedImage(upright, exifOrientation: pixelTransform)
+        let normalized = pipeline.analyze(
+            image: transformed,
+            orientation: inputOrientation,
+            proposedEndpoints: annotation.endpointsPx.orderedPoints
+        )
+        try assertProduction(outcome: normalized, matches: fixture)
+    }
 }
 
 @Test func accelerateQualitySeparatesNormalAndDarkFixture() throws {
@@ -319,6 +331,82 @@ import Testing
     #expect(contour.bounds.height >= 400)
     #expect(contour.bounds.minX > 2)
     #expect(contour.bounds.maxY < 798)
+}
+
+final class AppleMeasurementPipelinePerformanceTests: XCTestCase {
+    func testCorpusRecordsRawP95LatencyForOneSecondDeviceGate() throws {
+        let manifest = try loadCorpusManifest()
+        let fixtures = try manifest.cases.map { fixture in
+            (
+                fixture: fixture,
+                image: try SyntheticFixtureImage.make(fixture, size: manifest.image.width),
+                endpoints: try XCTUnwrap(manifest.annotations[fixture.annotationId]).endpointsPx.orderedPoints
+            )
+        }
+        let pipeline = AppleMeasurementPoCPipeline()
+        var samples: [(fixtureID: String, milliseconds: Double)] = []
+        samples.reserveCapacity(fixtures.count)
+
+        for fixture in fixtures {
+            let started = DispatchTime.now().uptimeNanoseconds
+            let outcome = pipeline.analyze(
+                image: fixture.image,
+                proposedEndpoints: fixture.endpoints
+            )
+            let elapsed = DispatchTime.now().uptimeNanoseconds - started
+            try assertProduction(outcome: outcome, matches: fixture.fixture)
+            samples.append((fixture.fixture.id, Double(elapsed) / 1_000_000))
+        }
+
+        let sorted = samples.map(\.milliseconds).sorted()
+        let p95Index = max(0, Int(ceil(Double(sorted.count) * 0.95)) - 1)
+        let p95Milliseconds = sorted[p95Index]
+        let rawRecord = ([
+            "engine=apple-vision-core-image-accelerate-simd",
+            "corpus_schema=2",
+            "sample_count=\(samples.count)",
+            "p95_ms=\(p95Milliseconds)",
+        ] + samples.map {
+            "fixture_\($0.fixtureID)_ms=\($0.milliseconds)"
+        }).joined(separator: "\n")
+        let attachment = XCTAttachment(string: rawRecord)
+        attachment.name = "t11-02-corpus-raw-latency"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+
+        #if os(iOS) && !targetEnvironment(simulator)
+            XCTAssertLessThanOrEqual(
+                p95Milliseconds,
+                1_000,
+                "T11-02 baseline-device acceptance requires p95 <= 1 second"
+            )
+        #endif
+    }
+
+    func testCorpusRecordsXCTestClockAndMemoryMetrics() throws {
+        let manifest = try loadCorpusManifest()
+        let fixtures = try manifest.cases.map { fixture in
+            (
+                image: try SyntheticFixtureImage.make(fixture, size: manifest.image.width),
+                endpoints: try XCTUnwrap(manifest.annotations[fixture.annotationId]).endpointsPx.orderedPoints
+            )
+        }
+        let pipeline = AppleMeasurementPoCPipeline()
+        let options = XCTMeasureOptions()
+        options.iterationCount = 5
+
+        measure(
+            metrics: [XCTClockMetric(), XCTMemoryMetric()],
+            options: options
+        ) {
+            for fixture in fixtures {
+                _ = pipeline.analyze(
+                    image: fixture.image,
+                    proposedEndpoints: fixture.endpoints
+                )
+            }
+        }
+    }
 }
 
 private func assertProduction(outcome: MeasurementPoCOutcome, matches fixture: CorpusCase) throws {
@@ -367,6 +455,17 @@ private func outcomeSummary(_ outcome: MeasurementPoCOutcome) -> String {
         return "FAILURE:\(failure.rawValue)"
     case let .qualityRejected(hint):
         return "QUALITY:\(hint.rawValue)"
+    }
+}
+
+private func permutations(
+    _ points: [MeasurementPixelPoint]
+) -> [[MeasurementPixelPoint]] {
+    guard points.count > 1 else { return [points] }
+    return points.indices.flatMap { index -> [[MeasurementPixelPoint]] in
+        var remainder = points
+        let point = remainder.remove(at: index)
+        return permutations(remainder).map { [point] + $0 }
     }
 }
 

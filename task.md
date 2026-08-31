@@ -567,7 +567,18 @@ taskを`[x]`へ変更するcommitには、既存の最終`Verification`記録と
   - owner/release condition: physical device operator/user, rights/PII-cleared 30 distributed captures, complete CSV annotations + ruler/print-scale evidence; then review before checkbox
   - limitations: T11-02/T11-03 remain blocked, no OpenCV adoption decision
 
-- [ ] **T11-02 Vision/Core Image/Accelerate/simdでmarker・輪郭・射影補正PoCを行う**
+- Blocked implementation review (2026-09-01):
+  - status: `blocked`（checkboxは`[ ]`のまま）
+  - commits: `5e93c65`
+  - separable scope: 既存schema v2・18 synthetic case・generator・manifest・marker PDF・全既知worktree/branchの物理logを監査し、外部evidence root、30枚の必須分布、物理iPhone、annotation JSON、rights/PII、100%印刷・定規50.0mm marker evidence、file signature/hashをfail-closedで検証するimport/annotation gateとrunbookを実装した。権利不明binaryや物理写真は追加していない。
+  - tests authored: `scripts/t11_01_measurement_corpus/test_lint_corpus.py`（0/30 blocked、外部30枚matrix ready、外部hash、rights未確認・改ざん・repository内evidence root拒否）
+  - source review: `P0 none`（対象は分離可能なsource/doc候補。物理gate未充足は下記blockerとして維持）
+  - execution: `swift build`、`swift test`、`xcodebuild`、XCUITest、app起動は未実行。source-only corpus/manifest/doc/secret/`git diff --check`のみ実施
+  - blocker: rights/PII-cleared iPhone物理corpus `0/30`、review済みmarker print `0`、定規確認済み50.0mm evidenceなし
+  - owner/release condition: 物理端末operator/userがfrozen markerを100%印刷して50.0mm定規証跡を保持し、必須matrixのiPhone写真30枚以上を権利・PII確認付きで取得・完全annotationする。外部root strict gateとtask owner reviewが完了するまでT11-01はblockedで、T11-03の採否根拠に使用しない
+
+- [x] **T11-02 Vision/Core Image/Accelerate/simdでmarker・輪郭・射影補正PoCを行う**
+  - 作業開始記録 (2026-09-01): Lane D。参照artifactはT11-01 synthetic corpus schema v2と既存Apple PoC commits `4c8eed4`/`e5ea981`。所有fileは`MeasurementKit.swift`、`AppleMeasurementPipelineTests.swift`、T11-02 ADR/raw measurement記録で、direct childの専用worktreeへ排他的に委譲する。決定的corpus分類、corner/scale境界、orientation、failure、再現性、性能計測用test codeをauthorし、build/testはPhase 2へ延期する。物理corpus 0/30のためApple採否、marker検出率95%以上、無効scale 0、px/cm誤差1%以下、基準実機p95 1秒以内、memoryはdevice/acceptance gateとして未完のまま保持する。
   - 担当する責務: レーンDが、OpenCVなしで二重正方形検出と安全なscale取得が可能か最初に検証する。
   - 依存する先行タスク: T11-01。
   - 実装対象: `VNDetectRectanglesRequest`/`VNDetectContoursRequest`候補、二重輪郭検証、corner順序、Core Image perspective correction、simd座標変換、foreground/contrast segmentation候補、失敗理由分類。
@@ -575,6 +586,14 @@ taskを`[x]`へ変更するcommitには、既存の最終`Verification`記録と
   - 自動テスト方法: annotationとのcorner/scale比較、境界値、失敗code、再現性、性能measure testを同一corpusで実行する。
   - 実機確認が必要か: 必須。基準実機でaccuracy/latency/memoryを測る。
   - fixture / live: fixture＋実機offline解析。
+  - Implementation review (2026-09-01):
+    - status: `code_ready_unverified`
+    - commits: `4c8eed4`, `e5ea981`, `2230664`, `05316bc`
+    - production scope: Visionの二重正方形候補と衣類輪郭、Core Imageの全EXIF orientation正規化とmarker射影補正、Accelerate品質判定、simd射影、strict convexなcorner canonicalization、有限failure分類、決定的scale算出、Apple候補ADR/raw計測protocolを実装した。OpenCVは追加せず、Apple採用判断を物理gateまで保留した。
+    - tests authored: `Packages/Tests/MeasurementKitTests/AppleMeasurementPipelineTests.swift`（18-case corpus分類、全failure、79/80px・16/17px・0.649/0.650・23/24px境界、corner全24 permutation、全8 EXIF orientation、scale相対誤差1%以内、determinism、Vision/Core Image/Accelerate/simd、raw per-case latency/p95、XCTest clock/memory metric）
+    - source review: `P0 none`
+    - execution: `build/test not run; deferred to Phase 2`
+    - pending gates: Phase 2 package/app compileとfocused/full fixture test、T11-01のrights/PII-cleared物理corpus30枚以上と定規50.0mm証跡、基準実機の検出率95%以上・無効scale採用0・px/cm誤差1%以下・p95 1秒以内・memory、T11-03 Apple/OpenCV採否、T18-03の補正後±1.0cm acceptance
 
 - [ ] **T11-03 OpenCV iOS採用判断ゲートを通す**
   - 担当する責務: レーンD/Aが、精度未達の場合だけ追加依存を採用し、理由とコストを可視化する。
@@ -584,6 +603,15 @@ taskを`[x]`へ変更するcommitには、既存の最終`Verification`記録と
   - 自動テスト方法: どちらのengineも同じcontract test suiteを通し、選択engine以外がproduction dependency graphへ混入しないことをCIで検査する。
   - 実機確認が必要か: 必須。選択engineでT11-02の基準を再測定する。
   - fixture / live: fixture＋実機offline解析。
+  - Blocked implementation review (2026-09-01):
+    - status: `blocked`（checkboxは`[ ]`のまま、engine未選択）
+    - commits: `8f4dd37`
+    - separable scope: Apple-firstの有限decision contract、同一物理corpus evidence evaluator、protocol-only OpenCV wrapper境界、固定基準、binary size/build time/artifact source+SHA/license/NOTICE/privacy/明示承認入力、build-free JSON decision harness、OpenCV dependency/binary guard、ADRを実装した。OpenCV dependency/binary、OpenCV.js/WASM/Web Worker/ArUcoは追加していない。
+    - tests authored: `Packages/Tests/MeasurementKitTests/MeasurementEngineDecisionTests.swift`（物理evidence不足、95%/1%/1秒inclusive境界、Apple選択、same-corpus、OpenCV cost/approval、OpenCV選択、両engine未達fallback、共通有限contract）、`scripts/test_t11_03_decision_gate.py`（現状blocker、捏造decision、早期dependency、blocker drift、Apple pass、Apple fail/OpenCV missing）
+    - source review: `P0 none`（物理比較・最終採否がないためタスク全体は未完成）
+    - execution: build/test/fixture/app/実機測定は未実行。source-only decision/package graph/JSON/secret/`git diff --check`のみ実施
+    - blocker: T11-01物理corpus `0/30`、定規50.0mm・rights/PII・完全annotation・同一corpusのaccuracy/latency/memory evidenceなし
+    - owner/release condition: 物理端末operator/userとLane D/AがT11-01 evidenceを完成し、Apple raw指標を記録する。Appleが固定基準を外した場合だけ同一corpusでpinned OpenCV iOS artifactと配布コストを比較し、明示承認を含むADRでApple/OpenCV/product fallbackのいずれかを確定する
 
 ## 12. 射影補正、px/cm換算、着丈・身幅計算
 
@@ -595,6 +623,15 @@ taskを`[x]`へ変更するcommitには、既存の最終`Verification`記録と
   - 自動テスト方法: thresholdの直前/一致/直後、corner順序、homography round-trip、既知5.0cmのscale、invalid時に値を返さないことを全fixtureで検証する。
   - 実機確認が必要か: 必須。異なる距離/傾きでscale再現性を確認する。
   - fixture / live: 両方。
+  - Blocked implementation review (2026-09-01):
+    - status: `blocked`（checkboxは`[ ]`のまま）
+    - commits: `71f2525`, `5a63ce7`
+    - separable scope: T11-02の安定contractに基づくengine-neutralなupright image→品質→marker検証→garment mask→Double homography/full-plane perspective correction→px/cm pipeline、image/mask同時補正契約、有限result/error、stage間cancellation、逆変換を実装した。invalid時はscale・補正画像・maskを公開しない。選択engine adapter/dependency bindingは追加していない。
+    - tests authored: `Packages/Tests/MeasurementKitTests/MeasurementGeometryPipelineTests.swift`（79/80px、16/17px、0.649/0.650、23/24px、dark/blur、全体in-frame、mask寸法、全marker/segmentation failure、corner 24 permutation、homography round-trip/退化、5.0cm scale、image/mask補正、renderer/stage error、cancellation、invalid no-output）
+    - source review: `P0 none`（engine-neutral候補内。選択engineの製品scope未完成は下記blockerとして維持）
+    - execution: build/test/fixture/live/app/実機は未実行。source-only Swift/doc/secret/`git diff --check`のみ実施
+    - blocker: T11-03がengine未選択で、production adapter/dependency bindingと同一物理corpusのscale再現性証跡がない
+    - owner/release condition: T11-01物理evidenceとT11-02実機指標を揃え、T11-03 Lane D/Aがengineを決定し、選択adapter/bindingを同じcontractへ接続する。Phase 2 compile/focused/full test、fixture/live統合、距離・傾き別の実機scale再現性を完了するまでT12-01はblocked
 
 - [x] **T12-02 測定点提案APIを1回だけ呼びstrictに検証する**
   - 担当する責務: レーンC/Dが、補正済み画像から意味的4端点だけを取得し、cm決定を端末幾何に残す。
@@ -628,14 +665,23 @@ taskを`[x]`へ変更するcommitには、既存の最終`Verification`記録と
   - 実機確認が必要か: 必須。片手操作、zoom、細かな端点補正を確認する。
   - fixture / live: 両方。
 
-- [ ] **T13-02 endpoint検証、範囲警告、明示承認を作る**
+- [x] **T13-02 endpoint検証、範囲警告、明示承認を作る**
+  - 作業開始記録 (2026-09-01): Lane D/A。参照artifactはT13-01 endpoint editor、T12-03 geometry、app-owned `WorkflowEvent.approveMeasurementCV`、およびR5の短辺2.0% endpoint tolerance。所有fileはT13-02専用validation/approval stateとSwiftUI confirmation、endpoint editor接続、対応focused testで、direct childの専用worktreeへ排他的に委譲する。valid/invalid、tolerance直前/一致/直後、inclusive範囲境界、warning confirm/cancel、stale edit、承認eventをauthorし、build/testはPhase 2へ延期する。T13-01/T12 pipeline統合、fixture/live、invalid handle/範囲外再確認の実機、accuracy/acceptance gateは未完のまま保持する。
   - 担当する責務: レーンD/Aが、不正な線を確定させず、警告値は再確認後にのみ許可する。
   - 依存する先行タスク: T13-01。
   - 実装対象: image/garment領域検査、`ENDPOINTS_INVALID`、着丈20...100cm/身幅20...80cm warning、confirm dialog、`approved_cv` event。
-  - 完了条件: 画像外または衣類領域から大きく外れた点では承認不能。「大きく外れた」の数値toleranceを実装前に契約へ固定し、範囲外値は警告するが二段階の再確認後は承認でき、線と数値の明示操作だけが`approved_cv`を作る。
+  - 完了条件: 画像外、または補正画像pixel空間で衣類polygon境界から補正画像短辺の2.0%を超えて外れた点では承認不能とし、polygon内・境界上・短辺の2.0%以内（ちょうど2.0%を含む）は有効とする。範囲外値は警告するが、同一の線と数値に対する二段階の再確認後は承認でき、線と数値の明示操作だけが`approved_cv`を作る。
   - 自動テスト方法: valid/invalid endpoint、固定したtoleranceの直前/一致/直後、範囲境界、warning confirm/cancel、承認eventのstate test。
   - 実機確認が必要か: 必須。invalid handleと範囲外再確認を確認する。
   - fixture / live: 両方。
+  - Implementation review (2026-09-01):
+    - status: `code_ready_unverified`
+    - commits: `98873ba`, `c3e665a`, `1f69fbe`
+    - production scope: 補正画像専用garment polygon、短辺2.0% inclusive endpoint検証、`ENDPOINTS_INVALID`、着丈20...100cm/身幅20...80cm inclusive範囲、同一線・数値・polygonへ束縛した二段階warning confirmation、cancel/edit/stale失効、`approved_cv`とapp-owned event、承認後編集によるworkflow未承認化とedit gate閉鎖、日本語SwiftUI alert/44pt/VoiceOver表示を実装した。
+    - tests authored: `Packages/Tests/MeasurementKitTests/MeasurementEndpointApprovalTests.swift`、`MeasurementEndpointEditorTests.swift`、`Packages/Tests/DomainKitTests/CaptureWorkflowTests.swift`（polygon valid/invalid、2.0%直前/一致/直後、範囲上下限/直外、confirm/cancel/stale、承認event/status、承認後編集1回だけのrevoke event、4slot保持とedit gate閉鎖）
+    - source review: `P0 none`（初回reviewの承認後workflow revoke欠落を`1f69fbe`で修正し、そのP0差分を再確認）
+    - execution: `build/test not run; deferred to Phase 2`
+    - pending gates: Phase 2 package/app compileとfocused/full test、T12-01のcorrected polygon・T13-01 editor・session store/root workflow統合、fixture/live両flow、invalid handle・範囲外再確認・44pt・VoiceOver・Dynamic Type・zoomの実機、AC-MEAS-001/AC-GATE-001/AC-APPROVAL-001/AC-DEVICE-001 acceptance
 
 - [ ] **T13-03 撮り直し・4点手配置・数値手入力fallbackを作る**
   - 担当する責務: レーンDが、marker/segmentation/AI提案失敗をfixture成功に置換せず完走可能にする。
@@ -780,7 +826,8 @@ taskを`[x]`へ変更するcommitには、既存の最終`Verification`記録と
 
 ## 19. CI、runbook、ライセンス、最終受け入れ確認
 
-- [ ] **T19-01 iOS CIとmerge gateを固定する**
+- [x] **T19-01 iOS CIとmerge gateを固定する**
+  - 作業開始記録 (2026-09-01): Lane A/F。参照artifactはT02-03のXcode 26.2 (17C52)/`macos-26`/iOS 26.2 fixture baseline、既存HTTP v1/fixture/license lint、workspace/shared scheme。所有fileはT19-01専用CI workflow、fixture CI/secret scan/CI contract lintとself-test、merge-gate文書で、direct childの専用worktreeへ排他的に委譲する。clean resolve/build/package test/app unit/Simulator XCUITest、fixture hash/schema drift/secret/license/warning gate、artifact/no-shared-cache方針をauthorし、実行はPhase 2/hosted CIへ延期する。T17全suiteとの統合、hosted clean run、required check branch protection、保護environmentの明示live smokeはintegration/external gateとして未完のまま保持する。
   - 担当する責務: レーンA/Fが、再現可能なbuild/test/contract/license検査をPR必須条件にする。
   - 依存する先行タスク: T02-03, T17-01, T17-02, T17-03。
   - 実装対象: pinned Xcode runner、resolve/build/test、Simulator XCUITest、fixture hash、schema drift、secret scan、license inventory、artifact保存、cache方針。
@@ -788,6 +835,14 @@ taskを`[x]`へ変更するcommitには、既存の最終`Verification`記録と
   - 自動テスト方法: CI自身のrequired checksをbranch protectionで強制し、意図的なschema/hash/secret違反fixtureでjobが失敗することを確認する。
   - 実機確認が必要か: 不要。
   - fixture / live: fixture必須、live smokeは保護環境で明示実行。
+  - Implementation review (2026-09-01):
+    - status: `code_ready_unverified`
+    - commits: `befffda`
+    - production scope: Xcode 26.2 (17C52)/`macos-26`/iOS 26.2 iPhone 17 Proを固定し、clean package/Xcode resolve、package build/full test、app build-for-testing/unit/XCUITest、fixture hash・HTTP schema・secret・license・warning gate、7/14日artifact、no-shared-cache、SHA固定actionを持つPR CIを実装した。live smokeは保護environmentの明示`workflow_dispatch`だけに分離し、response/tokenをlog/artifactへ残さない。required check名とbranch protection手順も固定した。
+    - tests authored: `scripts/test_lint_t19_01_ci.py`、`scripts/test_t19_01_failure_gates.py`（workflow/action/secret境界drift、意図的schema timeout・marker hash・credential違反が各gateで失敗し、secret値を出力しないnegative path）
+    - source review: `P0 none`
+    - execution: `build/test not run; deferred to Phase 2`
+    - pending gates: hosted GitHub CIのclean実run、T17-01〜T17-03統合後のfull suite、repository administratorによる`T19-01 Source gates`/`T19-01 Fixture suite` required check設定とblocked-merge証跡、`teamd-ios-live-smoke`保護environment設定と明示live smoke
 
 - [x] **T19-02 開発・任意local backend・実機・障害対応runbookを完成させる**
   - 担当する責務: レーンF/Cが、新規開発者とデモ担当者が迷わず同じ経路を再現できるようにする。

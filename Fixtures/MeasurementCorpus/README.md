@@ -25,8 +25,27 @@ with the explicit reason `no valid marker candidate accepted`; this does not
 add a production failure enum. Dark and blur are local-quality annotations,
 not successful scale results. The physical corpus is
 not represented by substitute fixture images: collect it with the runbook and
-record only non-identifying conditions in `physical-corpus-log.csv`. The
-required physical gate is >=30 reviewed captures plus the ruler check; its
+record only non-identifying conditions in `physical-corpus-log.csv`. Bind each
+capture to a reviewed print in `marker-print-evidence.csv`; do not claim that a
+typed `50.0` value is physical evidence without the referenced external file
+and SHA-256. Both CSVs may remain header-only while the external work is
+blocked. The default lint reports that state as `blocked` without replacing it
+with fixture success.
+
+Keep reviewed photos and ruler-evidence binaries in a dedicated directory
+outside this repository. Once the human review is complete, validate the CSV
+semantics, file signatures, paths, and hashes against that directory:
+
+```sh
+python3 scripts/t11_01_measurement_corpus/lint_corpus.py \
+  --physical-root /absolute/path/to/t11-01-reviewed-evidence \
+  --require-physical-gate --summary-json
+```
+
+`--require-physical-gate` fails until every core bucket reaches its required
+count, all 30+ distinct captures have explicit rights/PII/annotation review,
+and every capture is linked to hash-verified 100%-print/50.0mm ruler evidence.
+The required physical gate is >=30 reviewed captures plus the ruler check; its
 optional 10-case failure/boundary comparison set is additional evidence only.
 
 No ArUco, OpenCV, Web asset, source-Web binary, personal image, or secret is

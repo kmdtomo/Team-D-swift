@@ -327,7 +327,7 @@
   - device: not required
   - limitations: none within T04-01; session artifact ownership and stale-result cleanup remain T04-02, and LiveKit connection/guidance filtering remains T04-03
 
-- [ ] **T04-02 セッション内storeと終了時破棄を定義する**
+- [x] **T04-02 セッション内storeと終了時破棄を定義する**
   - 担当する責務: レーンAが、画像・判定・採寸・中間生成物の所有権と寿命を一元管理する。
   - 依存する先行タスク: T04-01。
   - 実装対象: 4slot原本、assessment、measurement draft/approval、mask/background/composite候補、session/request/image ID、operation version、in-memory/保護付き一時file方針、明示的`endSession`。
@@ -347,11 +347,12 @@
   - limitations: none within T04-02; camera ingestion and final approved export integration remain in their owning downstream tasks
 
 - Post-acceptance review correction (2026-08-31):
-  - state: `in_progress`; the committed store artifacts remain usable for downstream fixture/mock starts, but the task is not accepted until this correction passes
-  - open defects: operation tokens are not bound to source-image revisions, so retakes can retain stale measurement/edit artifacts; protected temporary-file deletion failures are swallowed and cannot be retried; duplicate `ImageID` values make untyped loads ambiguous
-  - release condition: atomically invalidate source-dependent artifacts on original replacement/retake, reject stale completions, make cleanup failures observable and retryable, make image lookup deterministic, and pass focused DomainKit regressions plus the affected iOS build
+  - state: correction implementation committed; the task is `code_ready_unverified` under the latest explicit checkbox policy
+  - review defects addressed by the correction commits: source-image revision binding、retake時のderived artifact無効化、保護一時file削除失敗の可視化・再試行、重複`ImageID`拒否と決定的lookup
+  - remaining verification gate: focused DomainKit regressionsとaffected iOS buildを統合SHAで実行する
+  - correction record (2026-09-01): `01c91b6 fix(domain): bind artifacts to session image revisions`と`0a39480 fix(domain): quarantine failed protected writes`をmainへ統合済み。production修正と回帰test codeはcommit済みだが、修正後のbuild/testは未実行で最終検証に残る。
 
-- [ ] **T04-03 ライブ接続状態と助言順序を撮影状態から分離する**
+- [x] **T04-03 ライブ接続状態と助言順序を撮影状態から分離する**
   - 担当する責務: レーンA/Cが、切断・再接続・古いeventで撮影進捗を巻き戻さない。
   - 依存する先行タスク: T03-01, T04-01。
   - 実装対象: `connecting/connected/reconnecting/disconnected`の直交状態、shot別last sequence、clock注入、GuidanceEvent filter/dedupe。
@@ -359,10 +360,11 @@
   - 自動テスト方法: fake clockでexpiry境界、out-of-order/duplicate/別session/再接続後sequenceをparameterized testする。
   - 実機確認が必要か: 不要。
   - fixture / live: 両方。
+  - 実装記録 (2026-09-01): `1ac8677 feat(t04-03): add session-ordered guidance filter`をmainへ統合済み。productionと対応test codeのcommit時点でチェックし、作業状態は`code_ready_unverified`。統合後build/testとT08のlive Room接続証跡は残るgateである。
 
 ## 5. AVFoundationカメラ制御
 
-- [ ] **T05-01 単一のAVCaptureSessionでpreview・解析・静止画を供給する**
+- [x] **T05-01 単一のAVCaptureSessionでpreview・解析・静止画を供給する**
   - 担当する責務: レーンBが、背面カメラを安全に所有し、高解像度原本と解析frameを分離する。
   - 依存する先行タスク: T02-02, T04-01。
   - 実装対象: camera authorization、背面device選択、session queue/actor、`AVCaptureVideoDataOutput`, `AVCapturePhotoOutput`, SwiftUI preview bridge、start/stop、エラー写像。
@@ -370,6 +372,7 @@
   - 自動テスト方法: protocol化したcapture device/outputで権限・構成失敗・start/stop idempotency・photo callbackをXCTestする。
   - 実機確認が必要か: 必須。背面カメラ、ガイドなし撮影原本、session解放を確認する。
   - fixture / live: live（fixtureではfake cameraで自動確認）。
+  - 実装記録 (2026-09-01): `1e22c92 feat: integrate single capture session owner`と`c9a7fc5 fix: close photo cancellation registration race`相当をmainへ統合済み。productionと対応test codeのcommit時点でチェックし、作業状態は`code_ready_unverified`。統合後build/test、app wiring、背面camera・overlayなし原本・session解放の実機live証跡は残るgateである。
 
 - [x] **T05-02 回転、mirror、EXIF、座標系を一元化する**
   - 進捗記録（2026-09-01・ユーザー明示指示）: 実装commit `97147c57d06b0d1736320d58cdbba5caea8d890b` を理由に、build/test/live/device未実行でもcheckboxを付けた。これは各gate成功の証拠ではない。
@@ -626,7 +629,7 @@
 
 ## 15. 元商品画素を保持する画像合成
 
-- [ ] **T15-01 Core Image/Core Graphics compositorを作る**
+- [x] **T15-01 Core Image/Core Graphics compositorを作る**
   - 担当する責務: レーンEが、生成背景と元front RGBをmaskだけで合成する。
   - 依存する先行タスク: T14-01, T14-02。
   - 実装対象: color space/orientation統一、背景のcrop/resize、元frontをforegroundにしたmask blend、preview/output render、cancellation。
@@ -634,8 +637,9 @@
   - 自動テスト方法: 小さな既知RGBA fixtureでalpha blend式、orientation/color space、determinism、snapshotをpixel testする。
   - 実機確認が必要か: 必須。高解像度frontで表示品質、memory、時間を確認する。
   - fixture / live: 両方。
+  - 実装記録 (2026-09-01): `8eaf7f1 feat: integrate deterministic front image compositor`と`bf5e15a feat: add Apple image compositor adapter`をmainへ統合済み。productionと対応test codeのcommit時点でチェックし、作業状態は`code_ready_unverified`。統合後build/pixel test、T14-02背景との統合、高解像度frontの実機品質・memory・時間証跡は残るgateである。
 
-- [ ] **T15-02 商品画素provenanceとmask不正を自動検証する**
+- [x] **T15-02 商品画素provenanceとmask不正を自動検証する**
   - 担当する責務: レーンE/Fが、「商品RGBは元frontのみ」を回帰不能なテスト契約にする。
   - 依存する先行タスク: T15-01。
   - 実装対象: opaque product pixelの比較、alpha edgeの期待blend、mask外背景比較、empty/full/size mismatch guard、back/tag/measurement不変hash。
@@ -643,10 +647,11 @@
   - 自動テスト方法: per-pixel provenance、source hash、negative mask suiteをCIで全件実行する。
   - 実機確認が必要か: 不要（見た目確認はT15-01）。
   - fixture / live: fixture。
+  - 実装記録 (2026-09-01): `a1d49bd test: add compositor provenance fixtures`と関連production guardをmainへ統合済み。対象test codeとguardのcommit時点でチェックし、作業状態は`code_ready_unverified`。統合後build/testとCI反復実行は残るgateである。
 
 ## 16. 比較・明示承認・画像保存
 
-- [ ] **T16-01 元画像/合成画像の同一領域比較と選択を作る**
+- [x] **T16-01 元画像/合成画像の同一領域比較と選択を作る**
   - 担当する責務: レーンEが、利用者が差を確認して原本または合成を明示選択できるようにする。
   - 依存する先行タスク: T15-01, T15-02。
   - 実装対象: side-by-side/slider等の比較、同一viewport/zoom、original/composite selection、未選択初期値、再生成/元採用。
@@ -654,6 +659,7 @@
   - 自動テスト方法: initial unapproved、viewport同期、original/composite選択、invalid compositeのview/state testとXCUITest。
   - 実機確認が必要か: 必須。画面サイズ、zoom、VoiceOverで比較と選択を確認する。
   - fixture / live: 両方。
+  - 実装記録 (2026-09-01): `e9e25c5 feat: add T16-01 image comparison state`と承認安全性修正をmainへ統合済み。SwiftUI productionと対応test codeのcommit時点でチェックし、作業状態は`code_ready_unverified`。統合後build/test/XCUITest、app flow接続、画面サイズ・zoom・VoiceOverの実機証跡は残るgateである。
 
 - [x] **T16-02 承認済み正面画像だけを保存しsessionを終了する**
   - 進捗記録（2026-09-01・ユーザー明示指示）: 実装commit `544512443b624c7ebdd576dd7a3cef19f968e5ec` を理由に、build/test/live/device未実行でもcheckboxを付けた。これは各gate成功の証拠ではない。

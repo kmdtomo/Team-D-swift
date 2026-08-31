@@ -410,7 +410,8 @@ taskを`[x]`へ変更するcommitには、既存の最終`Verification`記録と
   - 実機確認が必要か: 必須。回転前後のpreview/撮影/採寸point対応を確認する。
   - fixture / live: 両方。
 
-- [ ] **T05-03 権限拒否・中断・画像選択fallbackを扱う**
+- [x] **T05-03 権限拒否・中断・画像選択fallbackを扱う**
+  - 作業開始記録 (2026-09-01): Lane B。参照artifactはT05-01の`CaptureSessionController`/`AVFoundationCaptureDriver`とT04-02のsession-scoped store境界。所有fileは`CaptureKit`のrecovery UI/import/lifecycle実装、app内の同一撮影flow回復導線、対応unit/UI test。permission matrix、中断通知、picker cancel/failure/stale session、Settings/選択fallbackをauthorし、build/testはPhase 2へ延期する。実機の拒否→Settings/画像選択、電話相当中断、foreground復帰と、選択画像がT09/採寸の同一経路を通る統合・live・acceptance gateは未完のまま保持する。
   - 担当する責務: レーンBが、カメラを使えない場合も同じ4枚フローを維持する。
   - 依存する先行タスク: T05-01, T04-02。
   - 実装対象: permission UI、Settings導線、PhotosPicker/file import adapter、AVCaptureSession interruption/runtime error、foreground復帰。
@@ -418,6 +419,7 @@ taskを`[x]`へ変更するcommitには、既存の最終`Verification`記録と
   - 自動テスト方法: permission state matrix、interruption notification、picker stub、cancel/retryのstate testとXCUITest。
   - 実機確認が必要か: 必須。拒否→Settings/画像選択、電話相当の中断、background復帰を確認する。
   - fixture / live: 両方。
+  - 実装記録 (2026-09-01): 状態は`code_ready_unverified`。production commitsは`8b937f4`、`f43cc79`、test commitは`451c2b6`。permission matrix、Settings、PhotosPicker/file original import、cancel/failure/stale session、中断/runtime error/background復帰、同一session storeとT09/measurement route、同一AVCaptureSession observer、root overlay/cleanupを実装し、限定source reviewは`P0 none`。Phase 1のためbuild/test/XCUITestは未実行。fixture/live integration、拒否→Settings/画像選択、電話相当中断、foreground復帰、各slot継続の実機・acceptance gateは未完了。
 
 ## 6. 固定2Dガイドと撮影UI
 
@@ -475,15 +477,17 @@ taskを`[x]`へ変更するcommitには、既存の最終`Verification`記録と
   - 実機確認が必要か: 必須。5分間publishしながら複数回撮影し、停止/再開とthermal/memoryを記録する。
   - fixture / live: live。
 
-- [ ] **T08-02 token取得、Room接続、camera publish、助言購読を接続する**
+- [x] **T08-02 token取得、Room接続、camera publish、助言購読を接続する**
+  - 作業開始記録 (2026-09-01): Lane C（LiveKit dependency固定のみLane A共有fileをintegration ownerとして直列所有）。参照artifactはHTTP v1 token contract、T04-03 guidance filter、T08-01 ADRとLiveKit Swift `2.16.0`。所有fileは`LiveKitBridge`のtoken/Room/data/publish adapter、T05のlossless sample handoff、`Packages/Package.swift`、対応fake transport/unit test。mock token、join/leave、buffer track publish、lossy finite packet、reliable opaque packet、invalid/stale/cancel/no-pollingをauthorし、build/testはPhase 2へ延期する。共有Cloud credential、Agent実AI→push、実機publish/subscription/push、5分thermal/memoryとp95は外部/live/device/acceptance gateとして残す。
   - 担当する責務: レーンCが、秘密を持たずにstateful Agentとの持続接続を成立させる。
   - 依存する先行タスク: T03-02, T03-03, T03-05, T04-03, T08-01。
-  - 実装対象: 実装済み`/api/livekit-token`へのsession ID request、Room join/leave、local video publish、lossy/reliable data受信、GuidanceEvent strict decode、接続status adapter。Agent側の実AI→packet配線は参照元backendの外部依存としSwiftへ実装しない。
-  - 完了条件: 実装済みtoken issuerとcamera-only subscriberを再利用して実機camera trackをAgentがsubscribeし、参照元backend側のpush配線提供後に、定期HTTP/静止画pollingなしで有限助言がpushされる。token/API secretを保存・logせず、観測→表示p95 2秒の計測値を取得できる。
+  - 実装対象: 実装済み`/api/livekit-token`へのsession ID request、Room join/leave、local video publish、lossy/reliable data受信、GuidanceEvent strict decode、接続status adapter。Agent側の実AI→packet配線は現行参照元backendを再利用しSwiftへ実装しない。
+  - 完了条件: 実装済みtoken issuer、camera-only subscriber、現行push配線を再利用して実機camera trackをAgentがsubscribeし、定期HTTP/静止画pollingなしで有限助言がpushされる。token/API secretを保存・logせず、観測→表示p95 2秒の計測値を取得できる。
   - 自動テスト方法: mock token endpoint、fake Room delegate、invalid packet、publish/leave idempotency、HTTP request recorderでanalyze-live pollingがないことを検証する。
   - 実機確認が必要か: 必須。共有LiveKit Cloud＋Agentでpublish/subscription/pushを確認する。
   - fixture / live: live（packet処理はfixtureでも自動確認）。
   - 進捗・blocker記録 (2026-09-01): partial core `8b542ec feat(t08-02): add live guidance connection core`をmainへ統合済み。token request、Room transport protocol、join/leave、app-produced publish request、lossy `GuidanceEvent` strict decode/filter、未確定reliable bytesのopaque境界、generation/session/request stale guard、typed unavailableと未実行test codeは安定artifact。taskは未チェックで、Lane A/CによるLiveKit Swift SPM固定・実Room adapter、T05/T08-01 original `CMSampleBuffer` handoff、参照元shared backend ownerによるAgent guidance push、共有Cloud credential、実機publish/subscription/pushとp95証跡が解除条件である。fixture/mock成功をlive成功へ置換しない。
+  - 実装記録 (2026-09-01): 状態は`code_ready_unverified`。production commitsは`d80b647`、`5a41c3e`、`f43cc79`、test commitsは`58f3ef7`、`5a41c3e`。LiveKit Swift `2.16.0` exact SPM、ephemeral token client、Room join/leave、app-produced `BufferCapturer` publish、capacity-1 original `CMSampleBuffer` handoff、lossy strict guidance/reliable opaque/status、stale/cancel/no-polling、App root start/leaveを実装。現行backend `main`を2026-09-01 01:48 JSTに読み取り専用確認（`a25a8542664b4bd3bfe3ff00171ea56cd373966c`）し、topicなしpacketを閉じたshapeで明示互換化した。限定source reviewは`P0 none`、build/testはPhase 1で未実行。共有Cloud credential、provider設定、実機publish/subscription/push、5分thermal/memory、p95、live acceptanceは未完了で、fixture結果を代用しない。
 
 - [ ] **T08-03 再接続、reliable同期、Agent不在fallbackを作る**
   - 担当する責務: レーンC/Aが、ネットワーク断で進捗を失わず、古い助言で巻き戻らないようにする。
@@ -496,14 +500,16 @@ taskを`[x]`へ変更するcommitには、既存の最終`Verification`記録と
 
 ## 9. 撮影後AI判定
 
-- [ ] **T09-01 front/back/tagの高解像度判定clientを作る**
+- [x] **T09-01 front/back/tagの高解像度判定clientを作る**
+  - 作業開始記録 (2026-09-01): Lane C。参照artifactはHTTP/OpenAPI v1 `analyze-shot` multipart contractとT03-01 `ShotAssessment` strict codec。所有fileは`APIClient`のshot assessment provider/clientと対応unit test。multipart field/bytes/content type、全strict response、requested-shot矛盾、20秒timeout/cancel、measurement拒否、stale completionをauthorし、build/testはPhase 2へ延期する。参照元shared backendのendpoint提供、3種正常/誤種別/品質不良のlive実機確認は外部/live/device/acceptance gateとして残す。
   - 担当する責務: レーンCが、撮影前助言と最終受理を分離し、strictな`ShotAssessment`だけを返す。
   - 依存する先行タスク: T03-01, T03-02, T03-05, T05-01。
-  - 実装対象: Swift側の`/api/analyze-shot` multipart client、`requestedShot`、画像normalization policy、timeout/cancel、response validation、provider protocol。endpoint本体は参照元で未実装の外部依存であり、このrepoでは作らない。
+  - 実装対象: Swift側の`/api/analyze-shot` multipart client、`requestedShot`、画像normalization policy、timeout/cancel、response validation、provider protocol。endpoint本体は現行参照元backendを再利用し、このrepoでは作らない。
   - 完了条件: requestedShotをfront/back/tagに限定し、measurementを送らない。未知field/enum、欠落、requested shotと矛盾する`ok`を受理せず、高解像度結果だけをslot受理判定へ渡す。
   - 自動テスト方法: URLProtocol mockでmultipart field/bytes/content-type、全valid/invalid response、20秒timeout/cancel、measurement送信拒否を検証する。
   - 実機確認が必要か: 必須。3種の正常・誤種別・品質不良を共有backendで確認する。
   - fixture / live: 両方。
+  - 実装記録 (2026-09-01): 状態は`code_ready_unverified`。production commitsは`417c499`、`8c4adaa`、`5c50995`、`f43cc79`、対応test codeは`417c499`、`8c4adaa`、`5c50995`。front/back/tag限定、measurement事前拒否、原本bytesとstable idempotency、20秒timeout/cancel、全有限strict response、requested-shot矛盾、provider/status/content-type、stale completion、binary非保持、session store handoffを実装。現行backend `main`を2026-09-01 01:48 JSTに読み取り専用確認（`a25a8542664b4bd3bfe3ff00171ea56cd373966c`）し、凍結v1を残したまま`file` partと`detail` error envelopeの明示compatibility contractを追加した。限定source reviewは`P0 none`、build/testはPhase 1で未実行。共有backend/provider credential、JPEG/PNG/HEIC境界のlive確認、3種正常・誤種別・品質不良、実機・acceptance gateは未完了。
 
 - [ ] **T09-02 retry/error UXと進捗不変性を接続する**
   - 担当する責務: レーンA/B/Cが、暗い・ぼけ・欠け・tag読取不能・誤種別・service errorを有限理由で回復させる。

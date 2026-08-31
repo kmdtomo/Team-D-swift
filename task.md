@@ -315,7 +315,7 @@ taskを`[x]`へ変更するcommitには、既存の最終`Verification`記録と
   - 実機確認が必要か: 不要。
   - fixture / live: fixture。
 
-- [ ] **T03-05 参照元の実装済みPython backend／LiveKit Agentを共用し、残るbackend gapを固定する**
+- [x] **T03-05 参照元の実装済みPython backend／LiveKit Agentを共用し、残るbackend gapを固定する**
   - 担当する責務: レーンC/Fが、参照元のLiveKit実装をSwiftへコピーせず共有serviceとして再利用し、実装済みと未実装を混同しない。
   - 依存する先行タスク: T03-02, T03-03。
   - 実装対象: `backend/app.py`, `livekit_token.py`, `live_agent.py`, `guidance_state_machine.py`, `providers/vision_guidance.py`、対応Python test、`requirements-backend.txt`、共有HTTPS staging、backend availability matrix。browser smokeのVITE token手順はSwiftへ持ち込まない。
@@ -323,6 +323,14 @@ taskを`[x]`へ変更するcommitには、既存の最終`Verification`記録と
   - 自動テスト方法: 参照元lockで`tests/test_livekit_token.py`, `test_live_agent.py`, `test_guidance_contract.py`を実行し、保護されたstagingでhealth/token claim/Room join/camera subscribeをsmokeする。未実装surfaceは期待どおりavailability matrixでfalseとなり、提供後に各dependent taskのcontract smokeを追加する。
   - 実機確認が必要か: 不要（camera publishの実機確認はT08-02）。
   - fixture / live: 両方。実装済みtransportはliveで確認し、未実装surfaceの間もfixture開発は継続する。
+  - Implementation review (2026-09-01):
+    - status: `code_ready_unverified`
+    - commits: `8b94c13`, `db6b4d3`, `04fa806`
+    - production scope: 固定source SHA、production/smoke別runtime pin、health/token・camera-only/capacity 1/同時推論1・Guidance contract/state machineの実装済みsurface、共有HTTPS staging・実AIpush・1〜2fps sampling・4 HTTP endpointのblockerを、owner・契約・必要時期・解除条件付き監査文書とmachine-readable availability資料へ固定した。Swift/backend代替実装とbrowser VITE手順は追加していない。
+    - tests authored: `scripts/lint_t03_05_backend_audit.py`, `scripts/test_lint_t03_05_backend_audit.py`（source/pin/smoke境界、implemented/blocker metadata、HTTP/Agent availability、OpenAPI method/version、Phase 1文言driftのpositive/negative検証）
+    - source review: `P0 none`
+    - execution: `build/test not run; deferred to Phase 2`
+    - pending gates: 専用testと参照元Python suite、fixture/live、保護stagingのhealth/token claim/Room join/camera subscribe、実AI→lossy/reliable push、1〜2fps sampling、4 endpoint提供後のprotected contract smoke、最終受け入れ。deviceはT03-05では不要
 
 ## 4. 型安全な撮影状態遷移
 
@@ -638,7 +646,7 @@ taskを`[x]`へ変更するcommitには、既存の最終`Verification`記録と
   - fixture / live: 両方。
   - 実装記録 (2026-09-01): `0d7ea6d feat(t14-01): add front-only garment mask client`をmainへ統合済み。最新の明示運用により実装と対応test codeのcommit時点でチェックし、作業状態は`code_ready_unverified`。build/testは未実行で、session/app統合、未実装の共有`/api/remove-background`、protected contract smoke、fixture/live、実機の正常/停止証跡は残るgateである。
 
-- [ ] **T14-02 許可styleから背景だけを生成する**
+- [x] **T14-02 許可styleから背景だけを生成する**
   - 担当する責務: レーンC/Eが、商品情報を生成APIへ渡さず空の撮影背景候補を取得する。
   - 依存する先行タスク: T03-02, T03-05, T10-01, T13-02またはT13-03。
   - 実装対象: style allowlist、人物/衣類/ハンガー/文字/ロゴを除外するbackend固定prompt契約、Swift側の`/api/generate-background` request、image validation、60秒timeout/retry、ライセンス確認済み固定背景fallback。endpoint本体は参照元で未実装の外部依存とする。
@@ -646,6 +654,14 @@ taskを`[x]`へ変更するcommitには、既存の最終`Verification`記録と
   - 自動テスト方法: request bodyのbinary/image field不在、未知style拒否、timeout/invalid image/fixed background fallbackを検証する。
   - 実機確認が必要か: 必須。共有backendの生成とnetwork failureを確認する。
   - fixture / live: 両方。
+  - Implementation review (2026-09-01):
+    - status: `code_ready_unverified`
+    - commits: `32ab6f8`, `ed97162`
+    - production scope: `clean-white` allowlistとbackend固定prompt除外policy、4枚＋採寸承認gate、text-only `{styleId}` request、60秒timeout・stable idempotency、ephemeral transport、strict status/content-type/ProviderError、bounded opaque PNG検証、cancel/stale抑止、live unavailable時のzero request、retryと許諾・inventory証跡付き固定背景descriptorの回復境界を新規client/policyへ実装した。商品原本・mask・tag・measurement bytes、未許諾asset、fixture fallbackは追加していない。
+    - tests authored: `Packages/Tests/APIClientTests/BackgroundGenerationClientTests.swift`（allowlist/prompt policy、gate、request body privacy、60秒timeout/idempotency、retry policy、PNG/content-type/provider error、cancel/stale、live available/unavailable、固定背景証跡、metadata-only stateの14 focused cases）
+    - source review: `P0 none`（初回reviewのretry/fixed-background P0は`ed97162`で修正し、その修正差分を確認済み）
+    - execution: `build/test not run; deferred to Phase 2`
+    - pending gates: package compile/focused test、T10/T13 session/app統合、共有`/api/generate-background`実装とprotected live smoke、実在する固定背景のlicense/inventory採用判断、fixture/live、共有backend正常/回線失敗の実機確認、最終受け入れ
 
 ## 15. 元商品画素を保持する画像合成
 
@@ -760,7 +776,7 @@ taskを`[x]`へ変更するcommitには、既存の最終`Verification`記録と
   - 実機確認が必要か: 不要。
   - fixture / live: fixture必須、live smokeは保護環境で明示実行。
 
-- [ ] **T19-02 開発・任意local backend・実機・障害対応runbookを完成させる**
+- [x] **T19-02 開発・任意local backend・実機・障害対応runbookを完成させる**
   - 担当する責務: レーンF/Cが、新規開発者とデモ担当者が迷わず同じ経路を再現できるようにする。
   - 依存する先行タスク: T03-03, T18-01, T18-03。
   - 実装対象: Xcode-only fixture、共有HTTPS/LiveKit Cloud live、自動署名の実機手順、任意local FastAPI/rembg手順、preflight/health、timeout/retry、データ消去、障害切り分け。
@@ -768,6 +784,14 @@ taskを`[x]`へ変更するcommitには、既存の最終`Verification`記録と
   - 自動テスト方法: docs command smoke、リンクlint、設定templateと実際のkey一覧差分testを行う。
   - 実機確認が必要か: 必須。別開発者がrunbookだけでfixtureとliveを再現する。
   - fixture / live: 両方。
+  - Implementation review (2026-09-01):
+    - status: `code_ready_unverified`
+    - commits: `553890b`, `bf1775c`
+    - production scope: `docs/runbooks/`へfixture、共有live、実機・demo、任意local FastAPI/rembg、障害切り分け・privacyの再現手順を分離して追加し、現行placeholder/unavailable live surfaceを成功扱いせず、50mm marker・service prewarm・接続/publish/push・採寸・背景/mask・保存・session cleanupをgo/no-go化した。既存CI、project、設定template、license inventoryは変更していない。
+    - tests authored: `scripts/lint_t19_02_runbooks.py`, `scripts/test_lint_t19_02_runbooks.py`（local link/command、現行xcconfig/Info.plist key、contract availability/timeout、secret assignment、optional-local、fixture/live境界、必須sectionのpositive/negative検証）
+    - source review: `P0 none`
+    - execution: `build/test not run; deferred to Phase 2`
+    - pending gates: 専用testとdocs command smoke、別開発者の60分以内fixture再現、共有HTTPS/LiveKit Cloud/Agent/rembg/background live再現、自動署名iPhoneとT18実機・privacy cleanup・demo evidence、最終受け入れ
 
 - [ ] **T19-03 第三者依存・fixture・modelのライセンス表記を確定する**
   - 担当する責務: レーンA/Fが、配布物に必要なnoticeと出典を漏れなく、不要なWeb資産を持ち込まず管理する。

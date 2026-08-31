@@ -19,6 +19,7 @@ public enum ShotAssessmentImageNormalizationPolicy: Equatable, Sendable {
 public struct ShotAssessmentOperation: Sendable {
     public let requestID: RequestID
     public let imageID: ImageID
+    public let idempotencyKey: IdempotencyKey
     public let requestedShot: AssessableShot
     public let originalImage: Data
     public let imageContentType: ImageContentType
@@ -28,6 +29,7 @@ public struct ShotAssessmentOperation: Sendable {
     public init(
         requestID: RequestID,
         imageID: ImageID,
+        idempotencyKey: IdempotencyKey,
         requestedShot: Shot,
         originalImage: Data,
         imageContentType: ImageContentType,
@@ -42,6 +44,7 @@ public struct ShotAssessmentOperation: Sendable {
         }
         self.requestID = requestID
         self.imageID = imageID
+        self.idempotencyKey = idempotencyKey
         self.requestedShot = assessableShot
         self.originalImage = originalImage
         self.imageContentType = imageContentType
@@ -100,7 +103,8 @@ public enum ShotAssessmentOutcome: Equatable, Sendable {
     case discardedAsStale(ShotAssessmentRequestDescriptor)
 }
 
-/// State never retains original image bytes, provider prose, or credentials.
+/// State never retains original image bytes or credentials. Provider failures
+/// remain session-only typed values; UI must map them to app-owned copy.
 public enum ShotAssessmentClientState: Equatable, Sendable {
     case idle(ShotAssessmentServiceAvailability)
     case requesting(ShotAssessmentServiceAvailability, ShotAssessmentRequestDescriptor)
@@ -233,13 +237,12 @@ public actor ShotAssessmentClient: ShotAssessmentProviding {
         let decoder = decoder
         return Task {
             do {
-                let key = try IdempotencyKey(operation.requestID.rawValue)
                 let request = try await backend.plannedAnalyzeRequest(
                     shot: operation.requestedShot,
                     data: operation.originalImage,
                     type: operation.imageContentType,
                     boundary: operation.boundary,
-                    key: key
+                    key: operation.idempotencyKey
                 )
                 try Task.checkCancellation()
                 let (data, response) = try await transport.data(for: request)
@@ -274,12 +277,15 @@ public actor ShotAssessmentClient: ShotAssessmentProviding {
             return .failed(.init(descriptor: descriptor, reason: .invalidContentType))
         }
         guard http.statusCode == 200 else {
-            guard let error = try? decoder.decode(ProviderError.self, from: data),
-                  error.provider == .shotAssessor else {
+            guard providerErrorStatusCodes.contains(http.statusCode) else {
                 return .failed(.init(
                     descriptor: descriptor,
                     reason: .unexpectedStatus(http.statusCode)
                 ))
+            }
+            guard let error = try? decoder.decode(ProviderError.self, from: data),
+                  error.provider == .shotAssessor else {
+                return .failed(.init(descriptor: descriptor, reason: .invalidResponse))
             }
             return .failed(.init(descriptor: descriptor, reason: .provider(error)))
         }
@@ -287,11 +293,16 @@ public actor ShotAssessmentClient: ShotAssessmentProviding {
             return .failed(.init(descriptor: descriptor, reason: .invalidResponse))
         }
         if assessment.quality == .ok,
-           assessment.shotType.rawValue != descriptor.requestedShot.rawValue {
+           (assessment.shotType.rawValue != descriptor.requestedShot.rawValue
+               || assessment.missingShots.contains(descriptor.requestedShot)) {
             return .failed(.init(descriptor: descriptor, reason: .requestedShotMismatch))
         }
         return .assessment(descriptor, assessment)
     }
+
+    private nonisolated static let providerErrorStatusCodes: Set<Int> = [
+        400, 415, 422, 429, 502, 503, 504,
+    ]
 
     private nonisolated static func isJSON(_ contentType: String?) -> Bool {
         contentType?.lowercased().split(separator: ";").first == "application/json"

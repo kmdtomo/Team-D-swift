@@ -4,6 +4,49 @@ import Foundation
 import Testing
 @testable import APIClient
 
+private final class ShotAssessmentProtocolStub: URLProtocol, @unchecked Sendable {
+    nonisolated(unsafe) static let lock = NSLock()
+    nonisolated(unsafe) static var requests: [URLRequest] = []
+    nonisolated(unsafe) static var handler: ((URLRequest) throws -> (HTTPURLResponse, Data))?
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        Self.lock.lock()
+        Self.requests.append(request)
+        let handler = Self.handler
+        Self.lock.unlock()
+        guard let handler else {
+            client?.urlProtocol(self, didFailWithError: URLError(.unknown))
+            return
+        }
+        do {
+            let (response, data) = try handler(request)
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: data)
+            client?.urlProtocolDidFinishLoading(self)
+        } catch {
+            client?.urlProtocol(self, didFailWithError: error)
+        }
+    }
+
+    override func stopLoading() {}
+
+    static func reset(_ handler: @escaping (URLRequest) throws -> (HTTPURLResponse, Data)) {
+        lock.lock()
+        requests = []
+        self.handler = handler
+        lock.unlock()
+    }
+
+    static func snapshot() -> [URLRequest] {
+        lock.lock()
+        defer { lock.unlock() }
+        return requests
+    }
+}
+
 private actor RecordingShotAssessmentTransport: ShotAssessmentTransport {
     private var responses: [Result<(Data, URLResponse), Error>]
     private(set) var requests: [URLRequest] = []
@@ -33,14 +76,14 @@ private struct DelayedShotAssessmentTransport: ShotAssessmentTransport {
     let responseBody: Data
 
     func data(for request: URLRequest) async throws -> (Data, URLResponse) {
-        if request.httpBody?.contains(Data([1])) == true {
+        if request.httpBody?.range(of: Data([1])) != nil {
             try await Task.sleep(for: .milliseconds(100))
         }
         return (responseBody, jsonResponse(for: request))
     }
 }
 
-@Suite("T09-01 shot assessment client")
+@Suite("T09-01 shot assessment client", .serialized)
 struct ShotAssessmentClientTests {
     @Test func sendsFrozenMultipartWithOriginalBytesForEveryAssessableShot() async throws {
         for (index, shot, contentType) in [
@@ -54,40 +97,60 @@ struct ShotAssessmentClientTests {
                 bytes: Data([UInt8(index), 0, 255]),
                 contentType: contentType
             )
-            let transport = RecordingShotAssessmentTransport([
-                .success((validAssessment(shot: shot), response(url: backendURL, status: 200)))
-            ])
-            let client = try makeClient(transport: transport)
+            ShotAssessmentProtocolStub.reset { request in
+                (response(url: request.url ?? backendURL, status: 200), validAssessment(shot: shot))
+            }
+            let client = try makeClient(transport: protocolTransport())
 
             guard case .assessment(let descriptor, _) = await client.assess(operation) else {
                 Issue.record("valid assessment was not returned")
                 continue
             }
             #expect(descriptor.requestedShot.rawValue == shot.rawValue)
-            let requests = await transport.requests
+            let requests = ShotAssessmentProtocolStub.snapshot()
             let request = try #require(requests.first)
             #expect(request.httpMethod == "POST")
             #expect(request.url?.path == "/api/analyze-shot")
             #expect(request.timeoutInterval == 20)
             #expect(request.value(forHTTPHeaderField: "Accept") == "application/json")
             #expect(request.value(forHTTPHeaderField: "Content-Type") == "multipart/form-data; boundary=assessment-boundary-\(index)")
-            #expect(request.value(forHTTPHeaderField: "Idempotency-Key") == "assessment-request-\(index)")
-            let expected = MultipartForm(boundary: try MultipartBoundary("assessment-boundary-\(index)")).analyzeBody(
-                shot: try #require(AssessableShot(rawValue: shot.rawValue)),
-                data: operation.originalImage,
-                contentType: contentType
+            #expect(request.value(forHTTPHeaderField: "Idempotency-Key") == "assessment-operation-\(index)")
+            var expected = Data(
+                "--assessment-boundary-\(index)\r\nContent-Disposition: form-data; name=\"requestedShot\"\r\nContent-Type: text/plain\r\n\r\n\(shot.rawValue)\r\n--assessment-boundary-\(index)\r\nContent-Disposition: form-data; name=\"image\"; filename=\"image\"\r\nContent-Type: \(contentType.rawValue)\r\n\r\n".utf8
             )
+            expected += operation.originalImage
+            expected += Data("\r\n--assessment-boundary-\(index)--\r\n".utf8)
             #expect(request.httpBody == expected)
             #expect(operation.normalizationPolicy == .preserveHighResolutionOriginal)
         }
     }
 
+    @Test func retryingAnOperationReusesItsStableIdempotencyKeyAndExactBody() async throws {
+        ShotAssessmentProtocolStub.reset { request in
+            (response(url: request.url ?? backendURL, status: 200), validAssessment(shot: .front))
+        }
+        let client = try makeClient(transport: protocolTransport())
+        let operation = try makeOperation(suffix: "stable-retry", bytes: Data([0, 17, 255]))
+
+        _ = await client.assess(operation)
+        _ = await client.assess(operation)
+
+        let requests = ShotAssessmentProtocolStub.snapshot()
+        #expect(requests.count == 2)
+        #expect(requests.allSatisfy {
+            $0.value(forHTTPHeaderField: "Idempotency-Key") == "assessment-operation-stable-retry"
+        })
+        #expect(requests[0].httpBody == requests[1].httpBody)
+    }
+
     @Test func acceptsStrictRetryAssessmentButRejectsContradictoryOKShot() async throws {
         let retry = #"{"shotType":"back","quality":"retry","issues":["WRONG_SHOT"],"missingShots":["front","tag"],"nextAction":"RETAKE"}"#
         let mismatchOK = #"{"shotType":"back","quality":"ok","issues":[],"missingShots":["tag"],"nextAction":"REQUEST_NEXT"}"#
+        let requestedStillMissing = #"{"shotType":"front","quality":"ok","issues":[],"missingShots":["front","tag"],"nextAction":"REQUEST_NEXT"}"#
         let transport = RecordingShotAssessmentTransport([
             .success((Data(retry.utf8), response(url: backendURL, status: 200))),
             .success((Data(mismatchOK.utf8), response(url: backendURL, status: 200))),
+            .success((Data(requestedStillMissing.utf8), response(url: backendURL, status: 200))),
         ])
         let client = try makeClient(transport: transport)
 
@@ -104,15 +167,45 @@ struct ShotAssessmentClientTests {
             return
         }
         #expect(failure.reason == .requestedShotMismatch)
+
+        guard case .failed(let missingFailure) = await client.assess(try makeOperation(suffix: "missing-requested")) else {
+            Issue.record("ok response that still lists requested shot as missing was accepted")
+            return
+        }
+        #expect(missingFailure.reason == .requestedShotMismatch)
+    }
+
+    @Test(arguments: [
+        #"{"shotType":"unknown","quality":"retry","issues":[],"missingShots":[],"nextAction":"RETAKE"}"#,
+        #"{"shotType":"back","quality":"retry","issues":["TOO_DARK","TOO_BRIGHT","TOO_BLURRY","BLURRY","GARMENT_CROPPED","TAG_UNREADABLE","WRONG_SHOT"],"missingShots":["front","back","tag"],"nextAction":"REQUEST_NEXT"}"#,
+        #"{"shotType":"tag","quality":"retry","issues":["TAG_UNREADABLE"],"missingShots":["tag"],"nextAction":"COMPLETE"}"#,
+    ])
+    func decodesEveryFiniteResponseFamilyWhenTheAssessmentIsNotContradictory(_ body: String) async throws {
+        let transport = RecordingShotAssessmentTransport([
+            .success((Data(body.utf8), response(url: backendURL, status: 200)))
+        ])
+        let client = try makeClient(transport: transport)
+        guard case .assessment = await client.assess(try makeOperation(suffix: "valid-family")) else {
+            Issue.record("valid finite response family was rejected")
+            return
+        }
     }
 
     @Test(arguments: [
         #"{"shotType":"front","quality":"ok","issues":[],"missingShots":["back","tag"],"nextAction":"REQUEST_NEXT","confidence":0.9}"#,
+        #"{"quality":"ok","issues":[],"missingShots":["back","tag"],"nextAction":"REQUEST_NEXT"}"#,
+        #"{"shotType":"front","issues":[],"missingShots":["back","tag"],"nextAction":"REQUEST_NEXT"}"#,
+        #"{"shotType":"front","quality":"ok","missingShots":["back","tag"],"nextAction":"REQUEST_NEXT"}"#,
+        #"{"shotType":"front","quality":"ok","issues":[],"nextAction":"REQUEST_NEXT"}"#,
         #"{"shotType":"front","quality":"ok","issues":[],"missingShots":["back","tag"]}"#,
+        #"{"shotType":"measurement","quality":"ok","issues":[],"missingShots":["back","tag"],"nextAction":"REQUEST_NEXT"}"#,
         #"{"shotType":"front","quality":"great","issues":[],"missingShots":["back","tag"],"nextAction":"REQUEST_NEXT"}"#,
         #"{"shotType":"front","quality":"ok","issues":["OPEN_ISSUE"],"missingShots":["back","tag"],"nextAction":"REQUEST_NEXT"}"#,
         #"{"shotType":"front","quality":"ok","issues":[],"missingShots":["measurement"],"nextAction":"REQUEST_NEXT"}"#,
+        #"{"shotType":"front","quality":"ok","issues":[],"missingShots":["back","tag"],"nextAction":"ADVANCE"}"#,
         #"{"shotType":"front","quality":"ok","issues":{},"missingShots":["back","tag"],"nextAction":"REQUEST_NEXT"}"#,
+        #"[]"#,
+        #"not-json"#,
     ])
     func rejectsUnknownMissingWrongTypeAndUnknownFiniteValues(_ body: String) async throws {
         let transport = RecordingShotAssessmentTransport([
@@ -129,26 +222,49 @@ struct ShotAssessmentClientTests {
     @Test func validatesContentTypeStatusAndShotAssessorProviderEnvelope() async throws {
         let provider = #"{"provider":"shot-assessor","code":"UNAVAILABLE","message":"provider unavailable","retryable":true}"#
         let wrongProvider = #"{"provider":"measurement-line","code":"UNAVAILABLE","message":"wrong provider","retryable":true}"#
+        let invalidProvider = #"{"provider":"shot-assessor","code":"UNAVAILABLE","message":"provider unavailable","retryable":true,"detail":"not frozen"}"#
         let transport = RecordingShotAssessmentTransport([
+            .success((Data(provider.utf8), response(url: backendURL, status: 400))),
+            .success((Data(provider.utf8), response(url: backendURL, status: 415))),
+            .success((Data(provider.utf8), response(url: backendURL, status: 422))),
+            .success((Data(provider.utf8), response(url: backendURL, status: 429))),
+            .success((Data(provider.utf8), response(url: backendURL, status: 502))),
             .success((Data(provider.utf8), response(url: backendURL, status: 503))),
+            .success((Data(provider.utf8), response(url: backendURL, status: 504))),
             .success((Data(wrongProvider.utf8), response(url: backendURL, status: 503))),
+            .success((Data(invalidProvider.utf8), response(url: backendURL, status: 503))),
+            .success((Data(provider.utf8), response(url: backendURL, status: 401))),
             .success((validAssessment(shot: .front), response(url: backendURL, status: 200, contentType: "text/plain"))),
         ])
         let client = try makeClient(transport: transport)
 
-        guard case .failed(let providerFailure) = await client.assess(try makeOperation(suffix: "provider")),
-              case .provider(let decoded) = providerFailure.reason else {
-            Issue.record("strict provider error was not preserved")
-            return
+        for status in [400, 415, 422, 429, 502, 503, 504] {
+            guard case .failed(let providerFailure) = await client.assess(try makeOperation(suffix: "provider-\(status)")),
+                  case .provider(let decoded) = providerFailure.reason else {
+                Issue.record("strict provider error for \(status) was not preserved")
+                return
+            }
+            #expect(decoded.provider == .shotAssessor)
+            #expect(decoded.retryable)
         }
-        #expect(decoded.provider == .shotAssessor)
-        #expect(decoded.retryable)
 
         guard case .failed(let statusFailure) = await client.assess(try makeOperation(suffix: "wrong-provider")) else {
             Issue.record("wrong provider envelope was accepted")
             return
         }
-        #expect(statusFailure.reason == .unexpectedStatus(503))
+        #expect(statusFailure.reason == .invalidResponse)
+
+        guard case .failed(let invalidProviderFailure) = await client.assess(try makeOperation(suffix: "invalid-provider")) else {
+            Issue.record("provider envelope with unknown field was accepted")
+            return
+        }
+        #expect(invalidProviderFailure.reason == .invalidResponse)
+
+        guard case .failed(let uncontractedStatus) = await client.assess(try makeOperation(suffix: "uncontracted-status")) else {
+            Issue.record("uncontracted status was accepted as a provider response")
+            return
+        }
+        #expect(uncontractedStatus.reason == .unexpectedStatus(401))
 
         guard case .failed(let typeFailure) = await client.assess(try makeOperation(suffix: "content-type")) else {
             Issue.record("wrong content type was accepted")
@@ -158,15 +274,15 @@ struct ShotAssessmentClientTests {
     }
 
     @Test func mapsTimeoutAndExplicitCancellationWithoutRetainingImageBytes() async throws {
-        let timeout = RecordingShotAssessmentTransport([.failure(URLError(.timedOut))])
-        let timeoutClient = try makeClient(transport: timeout)
+        ShotAssessmentProtocolStub.reset { _ in throw URLError(.timedOut) }
+        let timeoutClient = try makeClient(transport: protocolTransport())
         let timeoutOperation = try makeOperation(suffix: "timeout", bytes: Data([7, 7, 7]))
         guard case .failed(let timeoutFailure) = await timeoutClient.assess(timeoutOperation) else {
             Issue.record("timeout was not finite")
             return
         }
         #expect(timeoutFailure.reason == .timedOut)
-        #expect(!String(reflecting: await timeoutClient.stateSnapshot()).contains("BwcH"))
+        #expect(!containsDataPayload(await timeoutClient.stateSnapshot()))
 
         let suspending = SuspendingShotAssessmentTransport()
         let cancellationClient = try makeClient(transport: suspending)
@@ -248,6 +364,16 @@ private func makeClient(
     )
 }
 
+private func protocolTransport() -> URLSessionShotAssessmentTransport {
+    let configuration = URLSessionConfiguration.ephemeral
+    configuration.urlCache = nil
+    configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+    configuration.httpCookieStorage = nil
+    configuration.urlCredentialStorage = nil
+    configuration.protocolClasses = [ShotAssessmentProtocolStub.self]
+    return URLSessionShotAssessmentTransport(session: URLSession(configuration: configuration))
+}
+
 private func makeOperation(
     suffix: String,
     shot: Shot = .front,
@@ -257,6 +383,7 @@ private func makeOperation(
     try .init(
         requestID: RequestID("assessment-request-\(suffix)"),
         imageID: ImageID("assessment-image-\(suffix)"),
+        idempotencyKey: IdempotencyKey("assessment-operation-\(suffix)"),
         requestedShot: shot,
         originalImage: bytes,
         imageContentType: contentType,
@@ -293,4 +420,9 @@ private func waitUntil(_ predicate: () async -> Bool) async -> Bool {
         await Task.yield()
     }
     return false
+}
+
+private func containsDataPayload(_ value: Any) -> Bool {
+    if value is Data { return true }
+    return Mirror(reflecting: value).children.contains { containsDataPayload($0.value) }
 }

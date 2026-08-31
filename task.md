@@ -547,7 +547,7 @@ taskを`[x]`へ変更するcommitには、既存の最終`Verification`記録と
   - owner/release condition: physical device operator/user, rights/PII-cleared 30 distributed captures, complete CSV annotations + ruler/print-scale evidence; then review before checkbox
   - limitations: T11-02/T11-03 remain blocked, no OpenCV adoption decision
 
-- [ ] **T11-02 Vision/Core Image/Accelerate/simdでmarker・輪郭・射影補正PoCを行う**
+- [x] **T11-02 Vision/Core Image/Accelerate/simdでmarker・輪郭・射影補正PoCを行う**
   - 作業開始記録 (2026-09-01): Lane D。参照artifactはT11-01 synthetic corpus schema v2と既存Apple PoC commits `4c8eed4`/`e5ea981`。所有fileは`MeasurementKit.swift`、`AppleMeasurementPipelineTests.swift`、T11-02 ADR/raw measurement記録で、direct childの専用worktreeへ排他的に委譲する。決定的corpus分類、corner/scale境界、orientation、failure、再現性、性能計測用test codeをauthorし、build/testはPhase 2へ延期する。物理corpus 0/30のためApple採否、marker検出率95%以上、無効scale 0、px/cm誤差1%以下、基準実機p95 1秒以内、memoryはdevice/acceptance gateとして未完のまま保持する。
   - 担当する責務: レーンDが、OpenCVなしで二重正方形検出と安全なscale取得が可能か最初に検証する。
   - 依存する先行タスク: T11-01。
@@ -556,6 +556,14 @@ taskを`[x]`へ変更するcommitには、既存の最終`Verification`記録と
   - 自動テスト方法: annotationとのcorner/scale比較、境界値、失敗code、再現性、性能measure testを同一corpusで実行する。
   - 実機確認が必要か: 必須。基準実機でaccuracy/latency/memoryを測る。
   - fixture / live: fixture＋実機offline解析。
+  - Implementation review (2026-09-01):
+    - status: `code_ready_unverified`
+    - commits: `4c8eed4`, `e5ea981`, `2230664`, `05316bc`
+    - production scope: Visionの二重正方形候補と衣類輪郭、Core Imageの全EXIF orientation正規化とmarker射影補正、Accelerate品質判定、simd射影、strict convexなcorner canonicalization、有限failure分類、決定的scale算出、Apple候補ADR/raw計測protocolを実装した。OpenCVは追加せず、Apple採用判断を物理gateまで保留した。
+    - tests authored: `Packages/Tests/MeasurementKitTests/AppleMeasurementPipelineTests.swift`（18-case corpus分類、全failure、79/80px・16/17px・0.649/0.650・23/24px境界、corner全24 permutation、全8 EXIF orientation、scale相対誤差1%以内、determinism、Vision/Core Image/Accelerate/simd、raw per-case latency/p95、XCTest clock/memory metric）
+    - source review: `P0 none`
+    - execution: `build/test not run; deferred to Phase 2`
+    - pending gates: Phase 2 package/app compileとfocused/full fixture test、T11-01のrights/PII-cleared物理corpus30枚以上と定規50.0mm証跡、基準実機の検出率95%以上・無効scale採用0・px/cm誤差1%以下・p95 1秒以内・memory、T11-03 Apple/OpenCV採否、T18-03の補正後±1.0cm acceptance
 
 - [ ] **T11-03 OpenCV iOS採用判断ゲートを通す**
   - 担当する責務: レーンD/Aが、精度未達の場合だけ追加依存を採用し、理由とコストを可視化する。
@@ -609,7 +617,7 @@ taskを`[x]`へ変更するcommitには、既存の最終`Verification`記録と
   - 実機確認が必要か: 必須。片手操作、zoom、細かな端点補正を確認する。
   - fixture / live: 両方。
 
-- [ ] **T13-02 endpoint検証、範囲警告、明示承認を作る**
+- [x] **T13-02 endpoint検証、範囲警告、明示承認を作る**
   - 作業開始記録 (2026-09-01): Lane D/A。参照artifactはT13-01 endpoint editor、T12-03 geometry、app-owned `WorkflowEvent.approveMeasurementCV`、およびR5の短辺2.0% endpoint tolerance。所有fileはT13-02専用validation/approval stateとSwiftUI confirmation、endpoint editor接続、対応focused testで、direct childの専用worktreeへ排他的に委譲する。valid/invalid、tolerance直前/一致/直後、inclusive範囲境界、warning confirm/cancel、stale edit、承認eventをauthorし、build/testはPhase 2へ延期する。T13-01/T12 pipeline統合、fixture/live、invalid handle/範囲外再確認の実機、accuracy/acceptance gateは未完のまま保持する。
   - 担当する責務: レーンD/Aが、不正な線を確定させず、警告値は再確認後にのみ許可する。
   - 依存する先行タスク: T13-01。
@@ -618,6 +626,14 @@ taskを`[x]`へ変更するcommitには、既存の最終`Verification`記録と
   - 自動テスト方法: valid/invalid endpoint、固定したtoleranceの直前/一致/直後、範囲境界、warning confirm/cancel、承認eventのstate test。
   - 実機確認が必要か: 必須。invalid handleと範囲外再確認を確認する。
   - fixture / live: 両方。
+  - Implementation review (2026-09-01):
+    - status: `code_ready_unverified`
+    - commits: `98873ba`, `c3e665a`, `1f69fbe`
+    - production scope: 補正画像専用garment polygon、短辺2.0% inclusive endpoint検証、`ENDPOINTS_INVALID`、着丈20...100cm/身幅20...80cm inclusive範囲、同一線・数値・polygonへ束縛した二段階warning confirmation、cancel/edit/stale失効、`approved_cv`とapp-owned event、承認後編集によるworkflow未承認化とedit gate閉鎖、日本語SwiftUI alert/44pt/VoiceOver表示を実装した。
+    - tests authored: `Packages/Tests/MeasurementKitTests/MeasurementEndpointApprovalTests.swift`、`MeasurementEndpointEditorTests.swift`、`Packages/Tests/DomainKitTests/CaptureWorkflowTests.swift`（polygon valid/invalid、2.0%直前/一致/直後、範囲上下限/直外、confirm/cancel/stale、承認event/status、承認後編集1回だけのrevoke event、4slot保持とedit gate閉鎖）
+    - source review: `P0 none`（初回reviewの承認後workflow revoke欠落を`1f69fbe`で修正し、そのP0差分を再確認）
+    - execution: `build/test not run; deferred to Phase 2`
+    - pending gates: Phase 2 package/app compileとfocused/full test、T12-01のcorrected polygon・T13-01 editor・session store/root workflow統合、fixture/live両flow、invalid handle・範囲外再確認・44pt・VoiceOver・Dynamic Type・zoomの実機、AC-MEAS-001/AC-GATE-001/AC-APPROVAL-001/AC-DEVICE-001 acceptance
 
 - [ ] **T13-03 撮り直し・4点手配置・数値手入力fallbackを作る**
   - 担当する責務: レーンDが、marker/segmentation/AI提案失敗をfixture成功に置換せず完走可能にする。
@@ -753,7 +769,7 @@ taskを`[x]`へ変更するcommitには、既存の最終`Verification`記録と
 
 ## 19. CI、runbook、ライセンス、最終受け入れ確認
 
-- [ ] **T19-01 iOS CIとmerge gateを固定する**
+- [x] **T19-01 iOS CIとmerge gateを固定する**
   - 作業開始記録 (2026-09-01): Lane A/F。参照artifactはT02-03のXcode 26.2 (17C52)/`macos-26`/iOS 26.2 fixture baseline、既存HTTP v1/fixture/license lint、workspace/shared scheme。所有fileはT19-01専用CI workflow、fixture CI/secret scan/CI contract lintとself-test、merge-gate文書で、direct childの専用worktreeへ排他的に委譲する。clean resolve/build/package test/app unit/Simulator XCUITest、fixture hash/schema drift/secret/license/warning gate、artifact/no-shared-cache方針をauthorし、実行はPhase 2/hosted CIへ延期する。T17全suiteとの統合、hosted clean run、required check branch protection、保護environmentの明示live smokeはintegration/external gateとして未完のまま保持する。
   - 担当する責務: レーンA/Fが、再現可能なbuild/test/contract/license検査をPR必須条件にする。
   - 依存する先行タスク: T02-03, T17-01, T17-02, T17-03。
@@ -762,6 +778,14 @@ taskを`[x]`へ変更するcommitには、既存の最終`Verification`記録と
   - 自動テスト方法: CI自身のrequired checksをbranch protectionで強制し、意図的なschema/hash/secret違反fixtureでjobが失敗することを確認する。
   - 実機確認が必要か: 不要。
   - fixture / live: fixture必須、live smokeは保護環境で明示実行。
+  - Implementation review (2026-09-01):
+    - status: `code_ready_unverified`
+    - commits: `befffda`
+    - production scope: Xcode 26.2 (17C52)/`macos-26`/iOS 26.2 iPhone 17 Proを固定し、clean package/Xcode resolve、package build/full test、app build-for-testing/unit/XCUITest、fixture hash・HTTP schema・secret・license・warning gate、7/14日artifact、no-shared-cache、SHA固定actionを持つPR CIを実装した。live smokeは保護environmentの明示`workflow_dispatch`だけに分離し、response/tokenをlog/artifactへ残さない。required check名とbranch protection手順も固定した。
+    - tests authored: `scripts/test_lint_t19_01_ci.py`、`scripts/test_t19_01_failure_gates.py`（workflow/action/secret境界drift、意図的schema timeout・marker hash・credential違反が各gateで失敗し、secret値を出力しないnegative path）
+    - source review: `P0 none`
+    - execution: `build/test not run; deferred to Phase 2`
+    - pending gates: hosted GitHub CIのclean実run、T17-01〜T17-03統合後のfull suite、repository administratorによる`T19-01 Source gates`/`T19-01 Fixture suite` required check設定とblocked-merge証跡、`teamd-ios-live-smoke`保護environment設定と明示live smoke
 
 - [ ] **T19-02 開発・任意local backend・実機・障害対応runbookを完成させる**
   - 担当する責務: レーンF/Cが、新規開発者とデモ担当者が迷わず同じ経路を再現できるようにする。

@@ -44,6 +44,9 @@ public final class AVFoundationCaptureDriver: NSObject, CaptureSessionDriving, @
     private var photoContinuation: CheckedContinuation<CapturedPhoto, Error>?
     private var photoRequestID: UInt64?
     private var photoSettingsID: Int64?
+    // There can only be one in-flight photo. This single bounded tombstone closes
+    // the cancellation-before-registration race without retaining request IDs.
+    private var preCancelledPhotoRequestID: UInt64?
     private var sequence: UInt64 = 0
     private var configured = false
 
@@ -74,19 +77,33 @@ public final class AVFoundationCaptureDriver: NSObject, CaptureSessionDriving, @
             sessionQueue.async { [self] in
                 guard photoContinuation == nil else { continuation.resume(throwing: CaptureSessionError.captureInProgress); return }
                 guard session.isRunning else { continuation.resume(throwing: CaptureSessionError.notRunning); return }
+                if preCancelledPhotoRequestID == requestID {
+                    preCancelledPhotoRequestID = nil
+                    continuation.resume(throwing: CaptureSessionError.cancelled)
+                    return
+                }
+                preCancelledPhotoRequestID = nil
                 let settings = AVCapturePhotoSettings(format: [AVVideoCodecKey: AVVideoCodecType.jpeg]); settings.photoQualityPrioritization = .quality
                 photoContinuation = continuation; photoRequestID = requestID; photoSettingsID = settings.uniqueID
                 photoOutput.capturePhoto(with: settings, delegate: self)
             }
         }
     }
-    public func cancelPhotoCapture(requestID: UInt64) async { await enqueue { [self] in guard photoRequestID == requestID else { return }; resumePhoto(throwing: .cancelled) } }
+    public func cancelPhotoCapture(requestID: UInt64) async {
+        await enqueue { [self] in
+            guard photoRequestID == requestID else {
+                preCancelledPhotoRequestID = requestID
+                return
+            }
+            resumePhoto(throwing: .cancelled)
+        }
+    }
     public func tearDown() async {
         await enqueue { [self] in
             if let request = photoRequestID { _ = request; resumePhoto(throwing: .cancelled) }
             if session.isRunning { session.stopRunning() }; videoOutput.setSampleBufferDelegate(nil, queue: nil)
             if let input { session.removeInput(input) }; if session.outputs.contains(videoOutput) { session.removeOutput(videoOutput) }; if session.outputs.contains(photoOutput) { session.removeOutput(photoOutput) }
-            input = nil; sampleHandler = nil; configured = false; sequence = 0
+            input = nil; sampleHandler = nil; preCancelledPhotoRequestID = nil; configured = false; sequence = 0
         }
     }
     private func resumePhoto(returning photo: CapturedPhoto) { let pending = photoContinuation; photoContinuation = nil; photoRequestID = nil; photoSettingsID = nil; pending?.resume(returning: photo) }

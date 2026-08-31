@@ -135,9 +135,13 @@ public actor CaptureSessionController {
     public func capturePhoto() async throws -> CapturedPhoto {
         guard case .running = stateStorage else { throw CaptureSessionError.notRunning }
         guard currentPhotoRequestID == nil else { throw CaptureSessionError.captureInProgress }
+        guard !Task.isCancelled else { throw CaptureSessionError.cancelled }
         let request = nextNonzeroPhotoRequestID(); currentPhotoRequestID = request
         defer { if currentPhotoRequestID == request { currentPhotoRequestID = nil } }
         do {
+            // A task can be cancelled while it was waiting to enter this actor. Do
+            // not begin a hardware capture for that already-cancelled request.
+            guard !Task.isCancelled else { throw CaptureSessionError.cancelled }
             let photo = try await withTaskCancellationHandler(operation: { try await driver.capturePhoto(requestID: request) }, onCancel: { Task { await self.cancelPhotoCapture(ifCurrent: request) } })
             try Task.checkCancellation()
             guard currentPhotoRequestID == request else { throw CaptureSessionError.cancelled }

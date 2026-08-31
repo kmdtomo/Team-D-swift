@@ -123,6 +123,26 @@ final class CaptureSessionControllerTests: XCTestCase {
         XCTAssertEqual(newPhoto, expected)
         XCTAssertEqual(cancelledIDs, [1])
     }
+
+    func testPreCancelledCaptureDoesNotStartDriver() async throws {
+        let driver = PhotoRaceDriver()
+        let controller = CaptureSessionController(authorization: FakeAuthorization(.authorized), driver: driver)
+        let gate = Gate()
+        try await controller.start()
+        let pending = Task {
+            await gate.arrive()
+            await gate.wait()
+            return try await controller.capturePhoto()
+        }
+        try await eventually { await gate.hasArrived }
+        pending.cancel()
+        await gate.open()
+
+        do { _ = try await pending.value; XCTFail("pre-cancelled capture started") }
+        catch { XCTAssertEqual(error as? CaptureSessionError, .cancelled) }
+        let startedRequestIDs = await driver.startedRequestIDs
+        XCTAssertTrue(startedRequestIDs.isEmpty)
+    }
 }
 
 private enum TestTimeout: Error { case elapsed }

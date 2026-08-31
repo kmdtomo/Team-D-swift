@@ -265,7 +265,7 @@
   - device: not required
   - limitations: the four endpoints and Agent vision-to-push wiring remain shared-backend blockers; availability remains false until implementation plus protected contract smoke. T14-02 owns the styleId allowlist. No Swift substitute backend, OpenCV, or Web build was added.
 
-- [ ] **T03-03 fixture/live設定と秘密情報境界を実装する**
+- [x] **T03-03 fixture/live設定と秘密情報境界を実装する**
   - 担当する責務: レーンA/Cが、モードを明示し、live障害をfixture成功へ偽装できない構成にする。
   - 依存する先行タスク: T02-02, T03-02。
   - 実装対象: `Debug-Fixture`, `Debug-Live`, `Release` configuration、`.xcconfig` template、HTTPS base URL/LiveKit URLの非秘密値、ephemeral/no-cache URLSession configuration、gitignore、起動画面のモード表示。
@@ -273,6 +273,16 @@
   - 自動テスト方法: built productのsecret pattern scan、configuration別composition test、live stub failure時にfixture providerが呼ばれないspy test。
   - 実機確認が必要か: 不要。
   - fixture / live: 両方を別buildで確認する。
+
+### T03-03 検証記録（2026-08-31）
+
+- Verification (2026-08-31):
+  - commit/build: `936f7cc build: add explicit fixture and live configurations`, `917ff57 fix: surface explicit live configuration failures`, `99f1f9f test: scan rembg and private endpoint configuration`; Xcode 26.2 (17C52), iPhone 16 Pro Simulator (iOS 18.5, arm64)
+  - automated tests: `python3 scripts/verify_t03_03.py` passed; `python3 scripts/test_verify_t03_03.py` passed 14/14; `swift test --package-path Packages --filter RuntimeServiceCompositionTests` passed 6/6; `Debug-Fixture` and `Debug-Live` app builds both reported `BUILD SUCCEEDED`
+  - fixture: `Debug-Fixture` app bundle reported `TeamDMode=fixture`; recursive plist/binary/resource scan passed and the fixture composition created no network session
+  - live: `Debug-Live` app bundle reported `TeamDMode=live`; recursive plist/binary/resource scan passed; unavailable live provider produced the typed Japanese live failure while the fixture provider spy remained uncalled
+  - device: not required
+  - limitations: shared backend and LiveKit Room connectivity remain owned by T03-05/T08; this configuration task does not claim those live integrations are available
 
 - [ ] **T03-04 決定的fixtureカタログを整備する**
   - 担当する責務: レーンFが、外部serviceなしで正常・失敗・遅延・逆順を再現できるテスト入力を所有する。

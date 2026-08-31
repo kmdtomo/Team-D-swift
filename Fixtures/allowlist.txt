@@ -1,0 +1,8 @@
+# T01-02 fixture allowlist. One relative path prefix or extension per line.
+# No source binary is approved at this stage. Later assets must be entered in
+# asset-manifest.json with classification "copy" or "regenerate" first.
+root:Fixtures/Approved/
+extension:.png
+extension:.jpg
+extension:.jpeg
+extension:.json

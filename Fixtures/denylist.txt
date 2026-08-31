@@ -1,0 +1,26 @@
+# T01-02 prohibited Web/runtime fixture inputs. Entries are enforced by
+# scripts/lint_t01_02.py repository-wide (excluding Git/build artifacts) and
+# within recursively discovered dependency manifests.
+fixture-extension:.js
+fixture-extension:.mjs
+fixture-extension:.cjs
+fixture-extension:.ts
+fixture-extension:.tsx
+fixture-extension:.html
+fixture-extension:.css
+fixture-extension:.wasm
+fixture-path:node_modules
+fixture-path:openspec
+repository-path:ekyc-ar-ui-flow-final.png
+dependency:react
+dependency:react-dom
+dependency:vite
+dependency:typescript
+dependency:zod
+dependency:opencv.js
+dependency:opencv-js
+dependency:wasm
+dependency:fastapi
+dependency:rembg
+dependency:birefnet
+dependency:livekit-agents

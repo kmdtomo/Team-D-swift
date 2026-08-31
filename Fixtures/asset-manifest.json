@@ -1,0 +1,150 @@
+{
+  "schemaVersion": 1,
+  "sourceSnapshot": {
+    "repository": "https://github.com/neko-jpg/Team-D",
+    "commit": "44065d41e8906d34e5d8e11d7cd4cc14b25d17f2",
+    "readOnly": true
+  },
+  "rightsReview": {
+    "reviewedOn": "2026-08-31",
+    "result": "unverified",
+    "evidence": [
+      "The fixed source root has no LICENSE or COPYING file.",
+      "fixtures/README.md contains no redistribution grant for fixture binaries.",
+      "THIRD_PARTY_NOTICES does not license the fixture binaries."
+    ],
+    "decision": "do-not-copy"
+  },
+  "liveDependencyBoundary": {
+    "introducedByT01_02": "none",
+    "livekitSwift": "must be pinned and license/NOTICE-reviewed in T19-03",
+    "neverBundle": ["LiveKit JavaScript", "LiveKit Python", "FastAPI backend", "rembg", "BiRefNet"],
+    "openCViOS": "may be considered only after the T11 Apple-framework gate",
+    "neverAdopt": ["OpenCV.js", "WASM"]
+  },
+  "policy": {
+    "copyRequires": ["verified-license", "verified-notice-if-required", "approved-target-hash"],
+    "unverifiedBinaryAction": "do-not-copy",
+    "allowedFixtureRoot": "Fixtures/Approved",
+    "generatedTargetDimensions": { "width": 800, "height": 800 }
+  },
+  "assets": [
+    {
+      "id": "source-front",
+      "sourcePath": "fixtures/garment/front.png",
+      "sourceGitBlobSha1": "95953a647997ce537d3cd5293b9f981cc500b3e2",
+      "sourceSha256": "67592247ea559212a05b71293acf9cdf3b0283ec1088436fe00742f4fc825b2c",
+      "sourceObserved": { "format": "PNG RGBA8", "width": 800, "height": 800, "description": "source candidate image; behavior is not adopted as an assessor contract" },
+      "classification": "regenerate",
+      "targetPath": null,
+      "targetSha256": null,
+      "regeneratedTargetExpected": { "scenario": "front accepted", "shot": "front", "assessment": "ok" },
+      "generation": { "method": "iOS-owned deterministic garment fixture generator", "sourceCodeCopied": false },
+      "rights": { "status": "unverified", "decision": "do-not-copy", "notice": "No asset-specific license or NOTICE was found at the fixed source snapshot." }
+    },
+    {
+      "id": "source-back",
+      "sourcePath": "fixtures/garment/back.png",
+      "sourceGitBlobSha1": "7edea57f5e45ddd5b0fee5c39e07f08a51db2807",
+      "sourceSha256": "7b19f191e55653a0086df4d2b00e77b1be63d475c797355876b852f5a7933e74",
+      "sourceObserved": { "format": "PNG RGBA8", "width": 800, "height": 800, "description": "source candidate image; behavior is not adopted as an assessor contract" },
+      "classification": "regenerate",
+      "targetPath": null,
+      "targetSha256": null,
+      "regeneratedTargetExpected": { "scenario": "back accepted", "shot": "back", "assessment": "ok" },
+      "generation": { "method": "iOS-owned deterministic garment fixture generator", "sourceCodeCopied": false },
+      "rights": { "status": "unverified", "decision": "do-not-copy", "notice": "No asset-specific license or NOTICE was found at the fixed source snapshot." }
+    },
+    {
+      "id": "source-tag",
+      "sourcePath": "fixtures/garment/tag.png",
+      "sourceGitBlobSha1": "ed627ba138ea8405f8c82549d40bdfc1ca17cccf",
+      "sourceSha256": "5ef810c78fd30928697d8599ce78771b1176121412b6f106419706f9ac8dd8a1",
+      "sourceObserved": { "format": "PNG RGBA8", "width": 800, "height": 800, "description": "source candidate image; behavior is not adopted as an assessor contract" },
+      "classification": "regenerate",
+      "targetPath": null,
+      "targetSha256": null,
+      "regeneratedTargetExpected": { "scenario": "tag accepted", "shot": "tag", "assessment": "ok" },
+      "generation": { "method": "iOS-owned deterministic garment fixture generator", "sourceCodeCopied": false },
+      "rights": { "status": "unverified", "decision": "do-not-copy", "notice": "No asset-specific license or NOTICE was found at the fixed source snapshot." }
+    },
+    {
+      "id": "source-dark",
+      "sourcePath": "fixtures/garment/dark.png",
+      "sourceGitBlobSha1": "4cdf07854c9dfada87f1336107d2ac1fe09a9704",
+      "sourceSha256": "22c5aed90496e1092f37edc6c0cc430e19eba0a7ea6dcedea226f12be263658d",
+      "sourceObserved": { "format": "PNG RGBA8", "width": 800, "height": 800, "description": "source candidate image; no current iOS assessor code is inferred" },
+      "classification": "regenerate",
+      "targetPath": null,
+      "targetSha256": null,
+      "regeneratedTargetExpected": { "scenario": "low luminance retry", "requestedShot": "front", "assessment": "retry", "issue": "TOO_DARK" },
+      "generation": { "method": "iOS-owned deterministic low-luminance fixture generator", "sourceCodeCopied": false },
+      "rights": { "status": "unverified", "decision": "do-not-copy", "notice": "No asset-specific license or NOTICE was found at the fixed source snapshot." }
+    },
+    {
+      "id": "source-blur",
+      "sourcePath": "fixtures/garment/blur.png",
+      "sourceGitBlobSha1": "231abbc3e98e4a86ed9fbed44918fb03652ee4a2",
+      "sourceSha256": "6cae429f10c34a4de92850b02aa3080eeae823e7d0b30bb3085706703e0b489c",
+      "sourceObserved": { "format": "PNG RGBA8", "width": 800, "height": 800, "description": "source candidate image; no current iOS assessor code is inferred" },
+      "classification": "regenerate",
+      "targetPath": null,
+      "targetSha256": null,
+      "regeneratedTargetExpected": { "scenario": "blur retry", "requestedShot": "front", "assessment": "retry", "issue": "TOO_BLURRY" },
+      "generation": { "method": "iOS-owned deterministic downsample-and-upsample generator", "sourceCodeCopied": false },
+      "rights": { "status": "unverified", "decision": "do-not-copy", "notice": "No asset-specific license or NOTICE was found at the fixed source snapshot." }
+    },
+    {
+      "id": "source-wrong-shot",
+      "sourcePath": "fixtures/garment/wrong-shot.png",
+      "sourceGitBlobSha1": "ed627ba138ea8405f8c82549d40bdfc1ca17cccf",
+      "sourceSha256": "5ef810c78fd30928697d8599ce78771b1176121412b6f106419706f9ac8dd8a1",
+      "sourceObserved": { "format": "PNG RGBA8", "width": 800, "height": 800, "description": "byte-identical source candidate to tag.png" },
+      "classification": "regenerate",
+      "targetPath": null,
+      "targetSha256": null,
+      "regeneratedTargetExpected": { "scenario": "tag fixture used when front was requested", "requestedShot": "front", "assessment": "retry", "issue": "WRONG_SHOT" },
+      "generation": { "method": "reuse a separately regenerated tag fixture only through the iOS fixture catalog", "sourceCodeCopied": false },
+      "rights": { "status": "unverified", "decision": "do-not-copy", "notice": "No asset-specific license or NOTICE was found at the fixed source snapshot." }
+    },
+    {
+      "id": "source-known-front-mask",
+      "sourcePath": "fixtures/garment/known-front-mask.png",
+      "sourceGitBlobSha1": "33eb4e5d762b9ce6762f9969a20cc75ff3853420",
+      "sourceSha256": "683068a31ba9f99e790696e74398036a6f00a32bf315974b8224fe283f8f8d68",
+      "sourceObserved": { "format": "PNG RGBA8", "width": 800, "height": 800, "description": "opaque white garment and opaque black background; not an alpha mask" },
+      "classification": "regenerate",
+      "targetPath": null,
+      "targetSha256": null,
+      "regeneratedTargetExpected": { "scenario": "front-only known mask", "forShot": "front", "mask": "documented target mask encoding paired with regenerated front fixture" },
+      "generation": { "method": "iOS-owned deterministic mask paired only with a regenerated front fixture", "sourceCodeCopied": false },
+      "rights": { "status": "unverified", "decision": "do-not-copy", "notice": "No asset-specific license or NOTICE was found at the fixed source snapshot." }
+    },
+    {
+      "id": "source-known-back-mask",
+      "sourcePath": "fixtures/garment/known-back-mask.png",
+      "sourceGitBlobSha1": "33eb4e5d762b9ce6762f9969a20cc75ff3853420",
+      "sourceSha256": "683068a31ba9f99e790696e74398036a6f00a32bf315974b8224fe283f8f8d68",
+      "sourceObserved": { "format": "PNG RGBA8", "width": 800, "height": 800, "description": "opaque white garment and opaque black background; byte-identical to known-front-mask.png" },
+      "classification": "reject",
+      "targetPath": null,
+      "targetSha256": null,
+      "regeneratedTargetExpected": { "scenario": "no iOS use: only front is eligible for masking/composition" },
+      "generation": { "method": "not applicable", "sourceCodeCopied": false },
+      "rights": { "status": "unverified", "decision": "do-not-copy", "notice": "Back masks are outside the iOS product boundary and the source binary is unlicensed." }
+    },
+    {
+      "id": "source-known-tag-mask",
+      "sourcePath": "fixtures/garment/known-tag-mask.png",
+      "sourceGitBlobSha1": "ef5dc6e4221f234fac3b8d8f802c87105af76990",
+      "sourceSha256": "a49c5c7087a356a7f7a892cc230708d730a3462653bcbd3f3fc498e20eea98fa",
+      "sourceObserved": { "format": "PNG RGBA8", "width": 800, "height": 800, "description": "opaque white tag region and opaque black background; not an alpha mask" },
+      "classification": "reject",
+      "targetPath": null,
+      "targetSha256": null,
+      "regeneratedTargetExpected": { "scenario": "no iOS use: tag is never eligible for masking/composition" },
+      "generation": { "method": "not applicable", "sourceCodeCopied": false },
+      "rights": { "status": "unverified", "decision": "do-not-copy", "notice": "Tag masks are outside the iOS product boundary and the source binary is unlicensed." }
+    }
+  ]
+}

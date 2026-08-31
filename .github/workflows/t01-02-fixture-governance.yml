@@ -1,0 +1,13 @@
+name: T01-02 Fixture Governance
+
+on:
+  pull_request:
+  push:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify fixture provenance and prohibited Web dependencies
+        run: python3 scripts/lint_t01_02.py

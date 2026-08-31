@@ -128,7 +128,7 @@
   - device: not required
   - limitations: Guidance push、4 HTTP endpoints、fixture binary provenance、AC-DEVICE-001 evidence gap remain recorded external/follow-on work; no later task is claimed complete
 
-- [ ] **T01-02 コピー可否、fixture、ライセンスを資産単位で判定する**
+- [x] **T01-02 コピー可否、fixture、ライセンスを資産単位で判定する**
   - 担当する責務: レーンA/Fが、必要資産だけを安全に持ち込み、Web固有物と権利不明物を除外する。
   - 依存する先行タスク: T01-01。
   - 実装対象: allowlist/denylist、fixtureのsource path・SHA-256・寸法・期待値・生成方法・権利/ライセンスを持つmanifest。既存9画像（`front/back/tag/dark/blur/wrong-shot/known-front-mask/known-back-mask/known-tag-mask`）をすべて棚卸しし、back/tag maskやWeb UI画像は用途がなければコピー対象から除外する。
@@ -136,6 +136,16 @@
   - 自動テスト方法: fixture hash検証、許可拡張子/配置lint、denylist文字列とWeb依存packageの混入検査をCIで行う。
   - 実機確認が必要か: 不要。
   - fixture / live: fixtureを主に確認し、live用第三者依存も棚卸しする。
+
+### T01-02 検証記録（2026-08-31）
+
+- Verification (2026-08-31):
+  - commit/build: fixture governance/docs only; product build not required for this task
+  - automated tests: `python3 scripts/lint_t01_02.py` and `./scripts/lint_t01_02.py` passed; `python3 -m py_compile scripts/lint_t01_02.py` passed; `./scripts/lint_t01_01.sh` passed; isolated negative checks rejected semantic drift, blank rights/generation data, target traversal/hash violations, and an extra allowlist extension; `git diff --check` passed
+  - fixture: 9 source candidates inventoried — copy 0, regenerate 7, reject 2; no unlicensed source binary or source generator was copied
+  - live: inventory boundary only; no live dependency was introduced. LiveKit Swift license/NOTICE review remains T19-03; LiveKit JS/Python, backend, rembg, and BiRefNet remain non-bundled; OpenCV iOS remains gated by T11
+  - device: not required
+  - limitations: regenerated assets are intentionally deferred to their owning fixture/measurement tasks; this task does not claim those assets or follow-on tasks complete
 
 ## 2. Xcode／SwiftUIプロジェクトのscaffold
 

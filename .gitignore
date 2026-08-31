@@ -1,0 +1,8 @@
+# Swift Package Manager build products
+Packages/.build/
+
+# Xcode user and build state
+DerivedData/
+build/
+*.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/

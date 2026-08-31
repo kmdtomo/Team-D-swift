@@ -1,0 +1,109 @@
+// !$*UTF8*$!
+{
+  archiveVersion = 1;
+  classes = {};
+  objectVersion = 77;
+  objects = {
+
+/* Begin PBXBuildFile section */
+    A00000000000000000000001 /* TeamDApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000011 /* TeamDApp.swift */; };
+    A00000000000000000000002 /* DomainKit in Frameworks */ = {isa = PBXBuildFile; productRef = A00000000000000000000031 /* DomainKit */; };
+    A00000000000000000000003 /* ContractKit in Frameworks */ = {isa = PBXBuildFile; productRef = A00000000000000000000032 /* ContractKit */; };
+    A00000000000000000000004 /* CaptureKit in Frameworks */ = {isa = PBXBuildFile; productRef = A00000000000000000000033 /* CaptureKit */; };
+    A00000000000000000000005 /* APIClient in Frameworks */ = {isa = PBXBuildFile; productRef = A00000000000000000000034 /* APIClient */; };
+    A00000000000000000000006 /* LiveKitBridge in Frameworks */ = {isa = PBXBuildFile; productRef = A00000000000000000000035 /* LiveKitBridge */; };
+    A00000000000000000000007 /* MeasurementKit in Frameworks */ = {isa = PBXBuildFile; productRef = A00000000000000000000036 /* MeasurementKit */; };
+    A00000000000000000000008 /* CompositionKit in Frameworks */ = {isa = PBXBuildFile; productRef = A00000000000000000000037 /* CompositionKit */; };
+    A00000000000000000000009 /* TeamDTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000012 /* TeamDTests.swift */; };
+    A0000000000000000000000A /* DomainKit in Frameworks */ = {isa = PBXBuildFile; productRef = A00000000000000000000031 /* DomainKit */; };
+    A0000000000000000000000B /* TeamDUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000013 /* TeamDUITests.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+    A00000000000000000000011 /* TeamDApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TeamDApp.swift; sourceTree = "<group>"; };
+    A00000000000000000000012 /* TeamDTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TeamDTests/TeamDTests.swift; sourceTree = "<group>"; };
+    A00000000000000000000013 /* TeamDUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TeamDUITests/TeamDUITests.swift; sourceTree = "<group>"; };
+    A00000000000000000000021 /* TeamD.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = TeamD.app; sourceTree = BUILT_PRODUCTS_DIR; };
+    A00000000000000000000022 /* TeamDTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TeamDTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+    A00000000000000000000023 /* TeamDUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TeamDUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+    A00000000000000000000041 /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (A00000000000000000000002 /* DomainKit in Frameworks */, A00000000000000000000003 /* ContractKit in Frameworks */, A00000000000000000000004 /* CaptureKit in Frameworks */, A00000000000000000000005 /* APIClient in Frameworks */, A00000000000000000000006 /* LiveKitBridge in Frameworks */, A00000000000000000000007 /* MeasurementKit in Frameworks */, A00000000000000000000008 /* CompositionKit in Frameworks */); runOnlyForDeploymentPostprocessing = 0; };
+    A00000000000000000000042 /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (A0000000000000000000000A /* DomainKit in Frameworks */); runOnlyForDeploymentPostprocessing = 0; };
+    A00000000000000000000043 /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+    A00000000000000000000051 = {isa = PBXGroup; children = (A00000000000000000000052 /* App */, A00000000000000000000053 /* Tests */, A00000000000000000000054 /* Frameworks */, A00000000000000000000055 /* Products */); sourceTree = "<group>"; };
+    A00000000000000000000052 /* App */ = {isa = PBXGroup; children = (A00000000000000000000011 /* TeamDApp.swift */); path = App; sourceTree = "<group>"; };
+    A00000000000000000000053 /* Tests */ = {isa = PBXGroup; children = (A00000000000000000000012 /* TeamDTests.swift */, A00000000000000000000013 /* TeamDUITests.swift */); path = Tests; sourceTree = "<group>"; };
+    A00000000000000000000054 /* Frameworks */ = {isa = PBXGroup; children = (); name = Frameworks; sourceTree = "<group>"; };
+    A00000000000000000000055 /* Products */ = {isa = PBXGroup; children = (A00000000000000000000021 /* TeamD.app */, A00000000000000000000022 /* TeamDTests.xctest */, A00000000000000000000023 /* TeamDUITests.xctest */); name = Products; sourceTree = "<group>"; };
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+    A00000000000000000000061 /* TeamD */ = {isa = PBXNativeTarget; buildConfigurationList = A00000000000000000000071 /* Build configuration list for PBXNativeTarget "TeamD" */; buildPhases = (A00000000000000000000081 /* Sources */, A00000000000000000000041 /* Frameworks */, A00000000000000000000082 /* Resources */); buildRules = (); dependencies = (); name = TeamD; packageProductDependencies = (A00000000000000000000031 /* DomainKit */, A00000000000000000000032 /* ContractKit */, A00000000000000000000033 /* CaptureKit */, A00000000000000000000034 /* APIClient */, A00000000000000000000035 /* LiveKitBridge */, A00000000000000000000036 /* MeasurementKit */, A00000000000000000000037 /* CompositionKit */); productName = TeamD; productReference = A00000000000000000000021 /* TeamD.app */; productType = "com.apple.product-type.application"; };
+    A00000000000000000000062 /* TeamDTests */ = {isa = PBXNativeTarget; buildConfigurationList = A00000000000000000000072 /* Build configuration list for PBXNativeTarget "TeamDTests" */; buildPhases = (A00000000000000000000083 /* Sources */, A00000000000000000000042 /* Frameworks */, A00000000000000000000084 /* Resources */); buildRules = (); dependencies = (A00000000000000000000091 /* PBXTargetDependency */); name = TeamDTests; packageProductDependencies = (A00000000000000000000031 /* DomainKit */); productName = TeamDTests; productReference = A00000000000000000000022 /* TeamDTests.xctest */; productType = "com.apple.product-type.bundle.unit-test"; };
+    A00000000000000000000063 /* TeamDUITests */ = {isa = PBXNativeTarget; buildConfigurationList = A00000000000000000000073 /* Build configuration list for PBXNativeTarget "TeamDUITests" */; buildPhases = (A00000000000000000000085 /* Sources */, A00000000000000000000043 /* Frameworks */, A00000000000000000000086 /* Resources */); buildRules = (); dependencies = (A00000000000000000000092 /* PBXTargetDependency */); name = TeamDUITests; packageProductDependencies = (); productName = TeamDUITests; productReference = A00000000000000000000023 /* TeamDUITests.xctest */; productType = "com.apple.product-type.bundle.ui-testing"; };
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+    A00000000000000000000060 /* Project object */ = {isa = PBXProject; attributes = { LastSwiftUpdateCheck = 2620; LastUpgradeCheck = 2620; TargetAttributes = { A00000000000000000000061 = { CreatedOnToolsVersion = 26.2; }; A00000000000000000000062 = { CreatedOnToolsVersion = 26.2; TestTargetID = A00000000000000000000061; }; A00000000000000000000063 = { CreatedOnToolsVersion = 26.2; TestTargetID = A00000000000000000000061; }; }; }; buildConfigurationList = A00000000000000000000070 /* Build configuration list for PBXProject "TeamD" */; compatibilityVersion = "Xcode 16.0"; developmentRegion = en; hasScannedForEncodings = 0; knownRegions = (en, Base, ja); mainGroup = A00000000000000000000051; minimizedProjectReferenceProxies = 1; packageReferences = (A00000000000000000000030 /* XCLocalSwiftPackageReference "Packages" */); preferredProjectObjectVersion = 77; productRefGroup = A00000000000000000000055 /* Products */; projectDirPath = ""; projectRoot = ""; targets = (A00000000000000000000061 /* TeamD */, A00000000000000000000062 /* TeamDTests */, A00000000000000000000063 /* TeamDUITests */); };
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+    A00000000000000000000082 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+    A00000000000000000000084 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+    A00000000000000000000086 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+    A00000000000000000000081 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A00000000000000000000001 /* TeamDApp.swift in Sources */); runOnlyForDeploymentPostprocessing = 0; };
+    A00000000000000000000083 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A00000000000000000000009 /* TeamDTests.swift in Sources */); runOnlyForDeploymentPostprocessing = 0; };
+    A00000000000000000000085 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A0000000000000000000000B /* TeamDUITests.swift in Sources */); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+    A00000000000000000000091 /* PBXTargetDependency */ = {isa = PBXTargetDependency; target = A00000000000000000000061 /* TeamD */; };
+    A00000000000000000000092 /* PBXTargetDependency */ = {isa = PBXTargetDependency; target = A00000000000000000000061 /* TeamD */; };
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+    A000000000000000000000A1 /* Debug */ = {isa = XCBuildConfiguration; buildSettings = { ALWAYS_SEARCH_USER_PATHS = NO; CLANG_ENABLE_MODULES = YES; CLANG_ENABLE_OBJC_ARC = YES; CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES; COPY_PHASE_STRIP = NO; DEBUG_INFORMATION_FORMAT = dwarf; ENABLE_STRICT_OBJC_MSGSEND = YES; GCC_C_LANGUAGE_STANDARD = gnu17; GCC_NO_COMMON_BLOCKS = YES; GCC_WARN_64_TO_32_BIT_CONVERSION = YES; GCC_WARN_UNDECLARED_SELECTOR = YES; GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE; GCC_WARN_UNUSED_FUNCTION = YES; GCC_WARN_UNUSED_VARIABLE = YES; IPHONEOS_DEPLOYMENT_TARGET = 18.0; MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE; ONLY_ACTIVE_ARCH = YES; SDKROOT = iphoneos; SWIFT_VERSION = 6.0; }; name = Debug; };
+    A000000000000000000000A2 /* Release */ = {isa = XCBuildConfiguration; buildSettings = { ALWAYS_SEARCH_USER_PATHS = NO; CLANG_ENABLE_MODULES = YES; CLANG_ENABLE_OBJC_ARC = YES; CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES; COPY_PHASE_STRIP = YES; DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym"; ENABLE_NS_ASSERTIONS = NO; ENABLE_STRICT_OBJC_MSGSEND = YES; GCC_C_LANGUAGE_STANDARD = gnu17; GCC_NO_COMMON_BLOCKS = YES; GCC_WARN_64_TO_32_BIT_CONVERSION = YES; GCC_WARN_UNDECLARED_SELECTOR = YES; GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE; GCC_WARN_UNUSED_FUNCTION = YES; GCC_WARN_UNUSED_VARIABLE = YES; IPHONEOS_DEPLOYMENT_TARGET = 18.0; SDKROOT = iphoneos; SWIFT_COMPILATION_MODE = wholemodule; SWIFT_VERSION = 6.0; }; name = Release; };
+    A000000000000000000000B1 /* Debug */ = {isa = XCBuildConfiguration; buildSettings = { ASSETCATALOG_COMPILER_APPICON_NAME = ""; CODE_SIGN_STYLE = Automatic; CURRENT_PROJECT_VERSION = 1; DEVELOPMENT_TEAM = ""; GENERATE_INFOPLIST_FILE = YES; INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES; INFOPLIST_KEY_UILaunchScreen_Generation = YES; IPHONEOS_DEPLOYMENT_TARGET = 18.0; LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks"; MARKETING_VERSION = 1.0; PRODUCT_BUNDLE_IDENTIFIER = jp.teamd.capture; PRODUCT_NAME = "$(TARGET_NAME)"; SUPPORTED_PLATFORMS = "iphoneos iphonesimulator"; SWIFT_EMIT_LOC_STRINGS = YES; TARGETED_DEVICE_FAMILY = 1; }; name = Debug; };
+    A000000000000000000000B2 /* Release */ = {isa = XCBuildConfiguration; buildSettings = { ASSETCATALOG_COMPILER_APPICON_NAME = ""; CODE_SIGN_STYLE = Automatic; CURRENT_PROJECT_VERSION = 1; DEVELOPMENT_TEAM = ""; GENERATE_INFOPLIST_FILE = YES; INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES; INFOPLIST_KEY_UILaunchScreen_Generation = YES; IPHONEOS_DEPLOYMENT_TARGET = 18.0; LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks"; MARKETING_VERSION = 1.0; PRODUCT_BUNDLE_IDENTIFIER = jp.teamd.capture; PRODUCT_NAME = "$(TARGET_NAME)"; SUPPORTED_PLATFORMS = "iphoneos iphonesimulator"; SWIFT_EMIT_LOC_STRINGS = YES; TARGETED_DEVICE_FAMILY = 1; }; name = Release; };
+    A000000000000000000000C1 /* Debug */ = {isa = XCBuildConfiguration; buildSettings = { BUNDLE_LOADER = "$(TEST_HOST)"; GENERATE_INFOPLIST_FILE = YES; IPHONEOS_DEPLOYMENT_TARGET = 18.0; PRODUCT_BUNDLE_IDENTIFIER = jp.teamd.capture.tests; PRODUCT_NAME = "$(TARGET_NAME)"; TEST_HOST = "$(BUILT_PRODUCTS_DIR)/TeamD.app/TeamD"; }; name = Debug; };
+    A000000000000000000000C2 /* Release */ = {isa = XCBuildConfiguration; buildSettings = { BUNDLE_LOADER = "$(TEST_HOST)"; GENERATE_INFOPLIST_FILE = YES; IPHONEOS_DEPLOYMENT_TARGET = 18.0; PRODUCT_BUNDLE_IDENTIFIER = jp.teamd.capture.tests; PRODUCT_NAME = "$(TARGET_NAME)"; TEST_HOST = "$(BUILT_PRODUCTS_DIR)/TeamD.app/TeamD"; }; name = Release; };
+    A000000000000000000000D1 /* Debug */ = {isa = XCBuildConfiguration; buildSettings = { GENERATE_INFOPLIST_FILE = YES; IPHONEOS_DEPLOYMENT_TARGET = 18.0; PRODUCT_BUNDLE_IDENTIFIER = jp.teamd.capture.uitests; PRODUCT_NAME = "$(TARGET_NAME)"; TEST_TARGET_NAME = TeamD; }; name = Debug; };
+    A000000000000000000000D2 /* Release */ = {isa = XCBuildConfiguration; buildSettings = { GENERATE_INFOPLIST_FILE = YES; IPHONEOS_DEPLOYMENT_TARGET = 18.0; PRODUCT_BUNDLE_IDENTIFIER = jp.teamd.capture.uitests; PRODUCT_NAME = "$(TARGET_NAME)"; TEST_TARGET_NAME = TeamD; }; name = Release; };
+    A000000000000000000000A3 /* Debug-Fixture */ = {isa = XCBuildConfiguration; buildSettings = { ALWAYS_SEARCH_USER_PATHS = NO; CLANG_ENABLE_MODULES = YES; CLANG_ENABLE_OBJC_ARC = YES; COPY_PHASE_STRIP = NO; DEBUG_INFORMATION_FORMAT = dwarf; ENABLE_STRICT_OBJC_MSGSEND = YES; GCC_C_LANGUAGE_STANDARD = gnu17; IPHONEOS_DEPLOYMENT_TARGET = 18.0; ONLY_ACTIVE_ARCH = YES; SDKROOT = iphoneos; SWIFT_VERSION = 6.0; }; name = "Debug-Fixture"; };
+    A000000000000000000000B3 /* Debug-Fixture */ = {isa = XCBuildConfiguration; buildSettings = { ASSETCATALOG_COMPILER_APPICON_NAME = ""; CODE_SIGN_STYLE = Automatic; CURRENT_PROJECT_VERSION = 1; DEVELOPMENT_TEAM = ""; ENABLE_APP_INTENTS_METADATA_PROCESSING = NO; GENERATE_INFOPLIST_FILE = YES; INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES; INFOPLIST_KEY_UILaunchScreen_Generation = YES; IPHONEOS_DEPLOYMENT_TARGET = 18.0; LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks"; MARKETING_VERSION = 1.0; PRODUCT_BUNDLE_IDENTIFIER = jp.teamd.capture; PRODUCT_NAME = "$(TARGET_NAME)"; SUPPORTED_PLATFORMS = "iphoneos iphonesimulator"; SWIFT_EMIT_LOC_STRINGS = YES; TARGETED_DEVICE_FAMILY = 1; }; name = "Debug-Fixture"; };
+    A000000000000000000000C3 /* Debug-Fixture */ = {isa = XCBuildConfiguration; buildSettings = { BUNDLE_LOADER = "$(TEST_HOST)"; ENABLE_APP_INTENTS_METADATA_PROCESSING = NO; GENERATE_INFOPLIST_FILE = YES; IPHONEOS_DEPLOYMENT_TARGET = 18.0; PRODUCT_BUNDLE_IDENTIFIER = jp.teamd.capture.tests; PRODUCT_NAME = "$(TARGET_NAME)"; TEST_HOST = "$(BUILT_PRODUCTS_DIR)/TeamD.app/TeamD"; }; name = "Debug-Fixture"; };
+    A000000000000000000000D3 /* Debug-Fixture */ = {isa = XCBuildConfiguration; buildSettings = { ENABLE_APP_INTENTS_METADATA_PROCESSING = NO; GENERATE_INFOPLIST_FILE = YES; IPHONEOS_DEPLOYMENT_TARGET = 18.0; PRODUCT_BUNDLE_IDENTIFIER = jp.teamd.capture.uitests; PRODUCT_NAME = "$(TARGET_NAME)"; TEST_TARGET_NAME = TeamD; }; name = "Debug-Fixture"; };
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+    A00000000000000000000070 /* Build configuration list for PBXProject "TeamD" */ = {isa = XCConfigurationList; buildConfigurations = (A000000000000000000000A1 /* Debug */, A000000000000000000000A3 /* Debug-Fixture */, A000000000000000000000A2 /* Release */); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+    A00000000000000000000071 /* Build configuration list for PBXNativeTarget "TeamD" */ = {isa = XCConfigurationList; buildConfigurations = (A000000000000000000000B1 /* Debug */, A000000000000000000000B3 /* Debug-Fixture */, A000000000000000000000B2 /* Release */); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+    A00000000000000000000072 /* Build configuration list for PBXNativeTarget "TeamDTests" */ = {isa = XCConfigurationList; buildConfigurations = (A000000000000000000000C1 /* Debug */, A000000000000000000000C3 /* Debug-Fixture */, A000000000000000000000C2 /* Release */); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+    A00000000000000000000073 /* Build configuration list for PBXNativeTarget "TeamDUITests" */ = {isa = XCConfigurationList; buildConfigurations = (A000000000000000000000D1 /* Debug */, A000000000000000000000D3 /* Debug-Fixture */, A000000000000000000000D2 /* Release */); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+    A00000000000000000000030 /* XCLocalSwiftPackageReference "Packages" */ = {isa = XCLocalSwiftPackageReference; relativePath = Packages; };
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+    A00000000000000000000031 /* DomainKit */ = {isa = XCSwiftPackageProductDependency; package = A00000000000000000000030 /* XCLocalSwiftPackageReference "Packages" */; productName = DomainKit; };
+    A00000000000000000000032 /* ContractKit */ = {isa = XCSwiftPackageProductDependency; package = A00000000000000000000030 /* XCLocalSwiftPackageReference "Packages" */; productName = ContractKit; };
+    A00000000000000000000033 /* CaptureKit */ = {isa = XCSwiftPackageProductDependency; package = A00000000000000000000030 /* XCLocalSwiftPackageReference "Packages" */; productName = CaptureKit; };
+    A00000000000000000000034 /* APIClient */ = {isa = XCSwiftPackageProductDependency; package = A00000000000000000000030 /* XCLocalSwiftPackageReference "Packages" */; productName = APIClient; };
+    A00000000000000000000035 /* LiveKitBridge */ = {isa = XCSwiftPackageProductDependency; package = A00000000000000000000030 /* XCLocalSwiftPackageReference "Packages" */; productName = LiveKitBridge; };
+    A00000000000000000000036 /* MeasurementKit */ = {isa = XCSwiftPackageProductDependency; package = A00000000000000000000030 /* XCLocalSwiftPackageReference "Packages" */; productName = MeasurementKit; };
+    A00000000000000000000037 /* CompositionKit */ = {isa = XCSwiftPackageProductDependency; package = A00000000000000000000030 /* XCLocalSwiftPackageReference "Packages" */; productName = CompositionKit; };
+/* End XCSwiftPackageProductDependency section */
+  };
+  rootObject = A00000000000000000000060 /* Project object */;
+}

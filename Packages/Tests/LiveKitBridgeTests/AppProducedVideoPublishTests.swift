@@ -2,6 +2,31 @@ import CaptureKit
 import Foundation
 import LiveKitBridge
 import Testing
+#if os(iOS)
+import CoreMedia
+import CoreVideo
+#endif
+
+#if os(iOS)
+@Test func captureAdapterCarriesTheOriginalTimedSampleIntoTheBoundedPublisherFrame() throws {
+    let sampleBuffer = try makeVideoSampleBuffer()
+    let retained = try AnalysisFrame(sampleBuffer: sampleBuffer)
+    let sample = AnalysisSample(
+        sequence: 7,
+        timestampNanoseconds: 123,
+        frame: retained
+    )
+
+    let frame = try #require(
+        AppProducedCaptureSampleAdapter.makeFrame(sample: sample, orientation: .portrait)
+    )
+
+    #expect(frame.sequence == 7)
+    #expect(frame.width == 16)
+    #expect(frame.height == 12)
+    #expect(frame.originalSample?.sampleBuffer === sampleBuffer)
+}
+#endif
 
 @Test func newestPendingFrameReplacesOlderFrameWhileOnePublishIsInFlight() async throws {
     let publisher = GatePublisher()
@@ -164,3 +189,43 @@ private actor FailOncePublisher: AppProducedVideoFramePublishing {
     func waitForAttemptedSequences(_ expected: [UInt64]) async { while attemptedSequences != expected { await Task.yield() } }
     func waitForPublishedSequences(_ expected: [UInt64]) async { while publishedSequences != expected { await Task.yield() } }
 }
+
+#if os(iOS)
+private func makeVideoSampleBuffer() throws -> CMSampleBuffer {
+    var pixelBuffer: CVPixelBuffer?
+    #expect(
+        CVPixelBufferCreate(
+            kCFAllocatorDefault,
+            16,
+            12,
+            kCVPixelFormatType_32BGRA,
+            nil,
+            &pixelBuffer
+        ) == kCVReturnSuccess
+    )
+    var format: CMVideoFormatDescription?
+    #expect(
+        CMVideoFormatDescriptionCreateForImageBuffer(
+            allocator: kCFAllocatorDefault,
+            imageBuffer: try #require(pixelBuffer),
+            formatDescriptionOut: &format
+        ) == noErr
+    )
+    var timing = CMSampleTimingInfo(
+        duration: .invalid,
+        presentationTimeStamp: CMTime(value: 1, timescale: 30),
+        decodeTimeStamp: .invalid
+    )
+    var sample: CMSampleBuffer?
+    #expect(
+        CMSampleBufferCreateReadyWithImageBuffer(
+            allocator: kCFAllocatorDefault,
+            imageBuffer: try #require(pixelBuffer),
+            formatDescription: try #require(format),
+            sampleTiming: &timing,
+            sampleBufferOut: &sample
+        ) == noErr
+    )
+    return try #require(sample)
+}
+#endif

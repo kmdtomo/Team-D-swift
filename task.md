@@ -548,6 +548,7 @@ taskを`[x]`へ変更するcommitには、既存の最終`Verification`記録と
   - limitations: T11-02/T11-03 remain blocked, no OpenCV adoption decision
 
 - [ ] **T11-02 Vision/Core Image/Accelerate/simdでmarker・輪郭・射影補正PoCを行う**
+  - 作業開始記録 (2026-09-01): Lane D。参照artifactはT11-01 synthetic corpus schema v2と既存Apple PoC commits `4c8eed4`/`e5ea981`。所有fileは`MeasurementKit.swift`、`AppleMeasurementPipelineTests.swift`、T11-02 ADR/raw measurement記録で、direct childの専用worktreeへ排他的に委譲する。決定的corpus分類、corner/scale境界、orientation、failure、再現性、性能計測用test codeをauthorし、build/testはPhase 2へ延期する。物理corpus 0/30のためApple採否、marker検出率95%以上、無効scale 0、px/cm誤差1%以下、基準実機p95 1秒以内、memoryはdevice/acceptance gateとして未完のまま保持する。
   - 担当する責務: レーンDが、OpenCVなしで二重正方形検出と安全なscale取得が可能か最初に検証する。
   - 依存する先行タスク: T11-01。
   - 実装対象: `VNDetectRectanglesRequest`/`VNDetectContoursRequest`候補、二重輪郭検証、corner順序、Core Image perspective correction、simd座標変換、foreground/contrast segmentation候補、失敗理由分類。
@@ -609,10 +610,11 @@ taskを`[x]`へ変更するcommitには、既存の最終`Verification`記録と
   - fixture / live: 両方。
 
 - [ ] **T13-02 endpoint検証、範囲警告、明示承認を作る**
+  - 作業開始記録 (2026-09-01): Lane D/A。参照artifactはT13-01 endpoint editor、T12-03 geometry、app-owned `WorkflowEvent.approveMeasurementCV`、およびR5の短辺2.0% endpoint tolerance。所有fileはT13-02専用validation/approval stateとSwiftUI confirmation、endpoint editor接続、対応focused testで、direct childの専用worktreeへ排他的に委譲する。valid/invalid、tolerance直前/一致/直後、inclusive範囲境界、warning confirm/cancel、stale edit、承認eventをauthorし、build/testはPhase 2へ延期する。T13-01/T12 pipeline統合、fixture/live、invalid handle/範囲外再確認の実機、accuracy/acceptance gateは未完のまま保持する。
   - 担当する責務: レーンD/Aが、不正な線を確定させず、警告値は再確認後にのみ許可する。
   - 依存する先行タスク: T13-01。
   - 実装対象: image/garment領域検査、`ENDPOINTS_INVALID`、着丈20...100cm/身幅20...80cm warning、confirm dialog、`approved_cv` event。
-  - 完了条件: 画像外または衣類領域から大きく外れた点では承認不能。「大きく外れた」の数値toleranceを実装前に契約へ固定し、範囲外値は警告するが二段階の再確認後は承認でき、線と数値の明示操作だけが`approved_cv`を作る。
+  - 完了条件: 画像外、または補正画像pixel空間で衣類polygon境界から補正画像短辺の2.0%を超えて外れた点では承認不能とし、polygon内・境界上・短辺の2.0%以内（ちょうど2.0%を含む）は有効とする。範囲外値は警告するが、同一の線と数値に対する二段階の再確認後は承認でき、線と数値の明示操作だけが`approved_cv`を作る。
   - 自動テスト方法: valid/invalid endpoint、固定したtoleranceの直前/一致/直後、範囲境界、warning confirm/cancel、承認eventのstate test。
   - 実機確認が必要か: 必須。invalid handleと範囲外再確認を確認する。
   - fixture / live: 両方。
@@ -752,6 +754,7 @@ taskを`[x]`へ変更するcommitには、既存の最終`Verification`記録と
 ## 19. CI、runbook、ライセンス、最終受け入れ確認
 
 - [ ] **T19-01 iOS CIとmerge gateを固定する**
+  - 作業開始記録 (2026-09-01): Lane A/F。参照artifactはT02-03のXcode 26.2 (17C52)/`macos-26`/iOS 26.2 fixture baseline、既存HTTP v1/fixture/license lint、workspace/shared scheme。所有fileはT19-01専用CI workflow、fixture CI/secret scan/CI contract lintとself-test、merge-gate文書で、direct childの専用worktreeへ排他的に委譲する。clean resolve/build/package test/app unit/Simulator XCUITest、fixture hash/schema drift/secret/license/warning gate、artifact/no-shared-cache方針をauthorし、実行はPhase 2/hosted CIへ延期する。T17全suiteとの統合、hosted clean run、required check branch protection、保護environmentの明示live smokeはintegration/external gateとして未完のまま保持する。
   - 担当する責務: レーンA/Fが、再現可能なbuild/test/contract/license検査をPR必須条件にする。
   - 依存する先行タスク: T02-03, T17-01, T17-02, T17-03。
   - 実装対象: pinned Xcode runner、resolve/build/test、Simulator XCUITest、fixture hash、schema drift、secret scan、license inventory、artifact保存、cache方針。

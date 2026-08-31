@@ -493,7 +493,7 @@ taskを`[x]`へ変更するcommitには、既存の最終`Verification`記録と
   - 進捗・blocker記録 (2026-09-01): partial core `8b542ec feat(t08-02): add live guidance connection core`をmainへ統合済み。token request、Room transport protocol、join/leave、app-produced publish request、lossy `GuidanceEvent` strict decode/filter、未確定reliable bytesのopaque境界、generation/session/request stale guard、typed unavailableと未実行test codeは安定artifact。taskは未チェックで、Lane A/CによるLiveKit Swift SPM固定・実Room adapter、T05/T08-01 original `CMSampleBuffer` handoff、参照元shared backend ownerによるAgent guidance push、共有Cloud credential、実機publish/subscription/pushとp95証跡が解除条件である。fixture/mock成功をlive成功へ置換しない。
   - 実装記録 (2026-09-01): 状態は`code_ready_unverified`。production commitsは`d80b647`、`5a41c3e`、`f43cc79`、test commitsは`58f3ef7`、`5a41c3e`。LiveKit Swift `2.16.0` exact SPM、ephemeral token client、Room join/leave、app-produced `BufferCapturer` publish、capacity-1 original `CMSampleBuffer` handoff、lossy strict guidance/reliable opaque/status、stale/cancel/no-polling、App root start/leaveを実装。現行backend `main`を2026-09-01 01:48 JSTに読み取り専用確認（`a25a8542664b4bd3bfe3ff00171ea56cd373966c`）し、topicなしpacketを閉じたshapeで明示互換化した。限定source reviewは`P0 none`、build/testはPhase 1で未実行。共有Cloud credential、provider設定、実機publish/subscription/push、5分thermal/memory、p95、live acceptanceは未完了で、fixture結果を代用しない。
 
-- [ ] **T08-03 再接続、reliable同期、Agent不在fallbackを作る**
+- [x] **T08-03 再接続、reliable同期、Agent不在fallbackを作る**
   - 担当する責務: レーンC/Aが、ネットワーク断で進捗を失わず、古い助言で巻き戻らないようにする。
   - 依存する先行タスク: T04-03, T08-02。
   - 実装対象: reconnect policy/status、現在shot＋last sequenceのRPC同期、step/受理用reliable message、Agent不在表示、manual retry。app→Agent context v1は`type=capture_context`、`sessionId`、1から単調増加する`revision`、`shot`、固定順で重複のない`acceptedShots`、nullableな`lastGuidanceSequence`だけを含み、画像・自由文・confidence・遷移commandを含めない。送信topicは`teamd.capture.context.v1`、reliable固定とする。
@@ -501,6 +501,7 @@ taskを`[x]`へ変更するcommitには、既存の最終`Verification`記録と
   - 自動テスト方法: fake Roomでdisconnect→逆順packet→reconnect→rehydrateを再現し、state不変とdedupeを検証する。
   - 実機確認が必要か: 必須。機内モード/回線切替/Agent停止・復旧をrunbookで確認する。
   - fixture / live: 両方。
+  - 実装記録 (2026-09-01): 状態は`code_ready_unverified`。production commitは`43ab917`、test commitは`4e97111`。strictな`capture_context` v1、exact reliable topic、正数単調revision、canonical accepted slots、最終受理sequence、initial join・shot更新・retake・reconnectのlatest-only同期、送信失敗状態とmanual retry、generation/request/session/room/attempt stale guard、LiveKit Swift 2.16.0 publish adapterを実装し、focused codec/initial/update/reconnect/failure/stale/latest-only test codeを追加した。限定source reviewは`P0 none`、`git diff --check`は成功、build/testはPhase 1で未実行。2026-09-01 02:28 JSTに最新backend default branchを読み取り専用確認し、`AgentRuntime.set_shot()`は存在するがapp data/RPC受信から呼ぶhandlerは未実装だった。共有backend ownerによるhandler接続、protected live smoke、機内モード・回線切替・Agent停止復旧の実機証跡は残るgateで、fixture成功を代用しない。
 
 ## 9. 撮影後AI判定
 
@@ -526,7 +527,7 @@ taskを`[x]`へ変更するcommitには、既存の最終`Verification`記録と
 
 ## 10. 4枚固定フローとfallback
 
-- [ ] **T10-01 4slotの固定順・撮り直し・採寸準備を統合する**
+- [x] **T10-01 4slotの固定順・撮り直し・採寸準備を統合する**
   - 担当する責務: レーンA/Bが、常に同じ順序と完了条件で撮影を進める。
   - 依存する先行タスク: T04-01, T04-02, T06-02, T09-02。
   - 実装対象: slot repository、progress UI、front/back/tag受理、measurement preparation checklist（背面を上、襟/袖/裾を広げてしわ/折れを伸ばす、無地で高contrastの床、markerを100%印刷して定規確認、同一平面の右下へ衣類から30mm以上離す、真上から両方の全体を写す）、`4/4`開始guard。
@@ -534,6 +535,7 @@ taskを`[x]`へ変更するcommitには、既存の最終`Verification`記録と
   - 自動テスト方法: happy path、各step retake、途中再試行、他slot保持、3枚だけでedit不可のstate/XCUITest。
   - 実機確認が必要か: 必須。カメラと画像選択の両経路で順序を確認する。
   - fixture / live: 両方。
+  - 実装記録 (2026-09-01): 状態は`code_ready_unverified`。production/test commitは`86af683`。camera-first rootへ`CaptureCoachView`を接続し、手動shutterと写真選択を同じ原本保存・strict `ShotAssessment`・app-owned受理経路へ統合した。`nextAction`を遷移に使わず、front→back→tag→measurement prep、同一step rejection、same-image retry、stale assessment破棄、他slot保持retake、finite guidance表示、現在shot/accepted slotsのcontext同期、採寸準備checklistを実装した。focused state test codeはhappy path、rejection、provider retry、stale、retake、全`ShotNextAction`非遷移を含む。限定source reviewは`P0 none`、`git diff --check`とsecret static scanは成功、build/test/XCUITestはPhase 1で未実行。T11〜T13が所有する4枚目のmarker validation・採寸補正/明示承認、T14/T15のmask→透明previewのApp接続、fixture/live、実機camera/import/guidance/context/VoiceOverは残るintegration・acceptance gateである。
 
 - [ ] **T10-02 共通fallbackを状態機械へ統合する**
   - 担当する責務: レーンA/Fが、権限、Agent、AI、採寸、mask、背景生成の失敗を成功扱いせず回復可能にする。
@@ -684,6 +686,7 @@ taskを`[x]`へ変更するcommitには、既存の最終`Verification`記録と
   - 実機確認が必要か: 必須。高解像度frontで表示品質、memory、時間を確認する。
   - fixture / live: 両方。
   - 実装記録 (2026-09-01): `8eaf7f1 feat: integrate deterministic front image compositor`と`bf5e15a feat: add Apple image compositor adapter`をmainへ統合済み。productionと対応test codeのcommit時点でチェックし、作業状態は`code_ready_unverified`。統合後build/pixel test、T14-02背景との統合、高解像度frontの実機品質・memory・時間証跡は残るgateである。
+  - 追加実装記録 (2026-09-01): `db9b786`で、元front RGBを保持しmask値だけをstraight alphaにするbackground-independent cutout、Apple `CGImage` adapter、固定checkerboard・日本語説明・VoiceOver単一semantic labelを持つ非操作`TransparentCutoutPreview`を追加した。front provenance、alpha境界、全8 orientation、determinism、cancellation、invalid mask、Apple pixel/semanticsのfocused test codeをauthor済み。限定source reviewは`P0 none`、`git diff --check`は成功、build/testはPhase 1で未実行。T14有効mask直後かつ背景生成前のApp/session接続、不正mask非表示、T16 approval/exportへの混入防止、実機表示・memory・VoiceOverは残るgateである。
 
 - [x] **T15-02 商品画素provenanceとmask不正を自動検証する**
   - 担当する責務: レーンE/Fが、「商品RGBは元frontのみ」を回帰不能なテスト契約にする。

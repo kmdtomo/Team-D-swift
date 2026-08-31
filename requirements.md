@@ -156,15 +156,15 @@
 |---|---|---|
 | `GET /api/health` | backend稼働状態。secretを含めない | 実装済み |
 | `POST /api/livekit-token` | requestはstrictな`{sessionId}`。responseは`token`, `participantIdentity`, `roomName`, `expiresAt`, `livekitUrl` | 実装済み |
-| LiveKit Agent | camera track限定購読、capacity 1の最新frame、同時推論1件、Guidance push | `a25a8542664b4bd3bfe3ff00171ea56cd373966c`でprovider→data publishを確認。topicなしpacketは閉じたpayload形状で互換処理する |
-| `POST /api/analyze-shot` | 高解像度写真＋要求shot → `ShotAssessment` | `a25a8542664b4bd3bfe3ff00171ea56cd373966c`で実装済み。現行wireの`file` partと`detail` error envelopeを明示compatibility contractで扱う |
-| `POST /api/suggest-measurement-points` | 補正済みmeasurement → 4つの`NormalizedPoint` | 未実装 |
+| LiveKit Agent | camera track限定購読、capacity 1の最新frame、同時推論1件、Guidance push | 最新確認時点でprovider→data publishを実装済み。topicなしpacketは閉じたpayload形状で互換処理する。app→Agentの`capture_context`受信から`AgentRuntime.set_shot()`への接続は未実装 |
+| `POST /api/analyze-shot` | 高解像度写真＋要求shot → `ShotAssessment` | 最新確認時点で実装済み。現行wireの`file` partと`detail` error envelopeを明示compatibility contractで扱う |
+| `POST /api/suggest-measurement-points` | 補正済みmeasurement → 4つの`NormalizedPoint` | 最新確認時点でroute実装済み。共有環境へのdeployとprotected contract smokeは別gate |
 | `POST /api/generate-background` | 許可style ID/テキスト → 商品なし背景 | 未実装 |
-| `POST /api/remove-background` | 元`front` → 同寸法mask-only PNG | 未実装 |
+| `POST /api/remove-background` | 元`front` → 同寸法mask-only PNG | 最新確認時点でroute実装済み。rembgを含む共有環境deployとprotected contract smokeは別gate |
 
 - tokenの既定TTLは90秒、hard maxは300秒。camera publish/data publishを許可し、subscribeは許可しない。
 - 未実装backend surfaceはSwift repo内に代替実装しない。fixtureでclient開発を進めてもlive完了としない。
-- T08-02/T09-01の現行backend確認は2026-09-01 01:48 JST、commit `a25a8542664b4bd3bfe3ff00171ea56cd373966c`。凍結済みHTTP v1を履歴として保持し、現行Agentのtopicなしpacketと現行`analyze-shot`の差分は[`docs/contracts/backend-current-compatibility.md`](./docs/contracts/backend-current-compatibility.md)の明示互換層だけで吸収する。
+- 現行backendは2026-09-01 02:28 JSTにリモートdefault branchを読み取り専用で再確認し、commit `a25a8542664b4bd3bfe3ff00171ea56cd373966c`でAgent push、`analyze-shot`、`suggest-measurement-points`、`remove-background`のroute実装を確認した。`generate-background`とapp→Agent `capture_context`受信handlerは確認できなかった。このSHAは確認証跡であり、現在のbackend正本を固定しない。凍結済みHTTP v1を履歴として保持し、現行wire差分は[`docs/contracts/backend-current-compatibility.md`](./docs/contracts/backend-current-compatibility.md)の明示互換層だけで吸収する。
 - 実装開始前にversion付きJSON Schema/OpenAPI、content type、error envelope、timeout、golden payloadを固定する。
 
 ## 6. fixture要件

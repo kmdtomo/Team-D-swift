@@ -11,7 +11,7 @@ import Testing
     #expect(await store.load(handle: handle) == Data([1, 2, 3]))
     try await store.store(Data([4, 5, 6]), handle: handle)
     #expect(await store.load(handle: handle) == Data([4, 5, 6]))
-    await store.discard(handle: handle)
+    try await store.discard(handle: handle)
     #expect(await store.load(handle: handle) == nil)
     #expect(fixture.ownedContents().isEmpty)
     #expect(fixture.callerMarkerExists)
@@ -25,7 +25,7 @@ import Testing
 
     try await store.store(Data([1]), handle: first)
     try await store.store(Data([2]), handle: second)
-    await store.discardAll(namespace: first.namespace)
+    try await store.discardAll(namespace: first.namespace)
 
     #expect(await store.load(handle: first) == nil)
     #expect(await store.load(handle: second) == Data([2]))
@@ -50,7 +50,7 @@ import Testing
     let handle = try fixture.handle(session: "end", lifecycle: 1, request: "request", image: "image", version: 1)
     try await store.store(Data([7]), handle: handle)
 
-    await store.cleanup()
+    try await store.cleanup()
 
     #expect(!fixture.ownedDirectoryExists)
     #expect(fixture.callerMarkerExists)
@@ -149,25 +149,106 @@ import Testing
     #expect(fixture.callerMarkerExists)
 }
 
+@Test func protectedTemporaryStoreFailedDiscardKeepsMappingForRetry() async throws {
+    let failures = RemovalFailureController()
+    let fixture = try TemporaryStoreFixture(removalFailures: failures)
+    let store = try fixture.makeStore()
+    let handle = try fixture.handle(session: "discard", lifecycle: 1, request: "request", image: "image", version: 1)
+    try await store.store(Data([1]), handle: handle)
+    failures.failNextRemoval()
+
+    await #expect(throws: InjectedRemovalError.failed) {
+        try await store.discard(handle: handle)
+    }
+    #expect(await store.load(handle: handle) == Data([1]))
+    #expect(try fixture.fileURL(lifecycle: 1, operation: 1).checkResourceIsReachable())
+
+    try await store.discard(handle: handle)
+    #expect(await store.load(handle: handle) == nil)
+}
+
+@Test func protectedTemporaryStoreFailedDiscardAllKeepsMappingForRetry() async throws {
+    let failures = RemovalFailureController()
+    let fixture = try TemporaryStoreFixture(removalFailures: failures)
+    let store = try fixture.makeStore()
+    let handle = try fixture.handle(session: "discard-all", lifecycle: 1, request: "request", image: "image", version: 1)
+    try await store.store(Data([2]), handle: handle)
+    failures.failNextRemoval()
+
+    await #expect(throws: InjectedRemovalError.failed) {
+        try await store.discardAll(namespace: handle.namespace)
+    }
+    #expect(await store.load(handle: handle) == Data([2]))
+
+    try await store.discardAll(namespace: handle.namespace)
+    #expect(await store.load(handle: handle) == nil)
+}
+
+@Test func protectedTemporaryStoreFailedCleanupPreservesStateForRetry() async throws {
+    let failures = RemovalFailureController()
+    let fixture = try TemporaryStoreFixture(removalFailures: failures)
+    let store = try fixture.makeStore()
+    let handle = try fixture.handle(session: "cleanup", lifecycle: 1, request: "request", image: "image", version: 1)
+    try await store.store(Data([3]), handle: handle)
+    failures.failNextRemoval()
+
+    await #expect(throws: InjectedRemovalError.failed) {
+        try await store.cleanup()
+    }
+    #expect(await store.load(handle: handle) == Data([3]))
+    #expect(fixture.ownedDirectoryExists)
+
+    try await store.cleanup()
+    #expect(!fixture.ownedDirectoryExists)
+    await #expect(throws: ProtectedTemporarySessionImageBackingStoreError.cleanedUp) {
+        try await store.store(Data([4]), handle: handle)
+    }
+}
+
 private struct FixedFilenameStrategy: ProtectedTemporarySessionFilenameStrategy {
     let value: String
     init(_ value: String) { self.value = value }
     func filename(lifecycleGeneration: UInt64, operationVersion: UInt64) -> String { value }
 }
 
+private enum InjectedRemovalError: Error {
+    case failed
+}
+
+private final class RemovalFailureController: @unchecked Sendable {
+    private let failureLock = NSLock()
+    private var shouldFailNextRemoval = false
+
+    func failNextRemoval() {
+        failureLock.lock()
+        shouldFailNextRemoval = true
+        failureLock.unlock()
+    }
+
+    func interceptRemoval(at _: URL) throws {
+        failureLock.lock()
+        let shouldFail = shouldFailNextRemoval
+        shouldFailNextRemoval = false
+        failureLock.unlock()
+        if shouldFail { throw InjectedRemovalError.failed }
+    }
+}
+
 private final class TemporaryStoreFixture {
     private let fileManager = FileManager.default
+    private let removalFailures: RemovalFailureController?
     let containerURL: URL
     private let callerMarkerURL: URL
 
-    init() throws {
-        containerURL = fileManager.temporaryDirectory.appendingPathComponent("team-d-protected-store-test-\(UUID().uuidString)", isDirectory: true)
-        try fileManager.createDirectory(at: containerURL, withIntermediateDirectories: false)
+    init(removalFailures: RemovalFailureController? = nil) throws {
+        self.removalFailures = removalFailures
+        containerURL = self.fileManager.temporaryDirectory.appendingPathComponent("team-d-protected-store-test-\(UUID().uuidString)", isDirectory: true)
+        try self.fileManager.createDirectory(at: containerURL, withIntermediateDirectories: false)
         callerMarkerURL = containerURL.appendingPathComponent("caller-owned-marker")
         try Data([0]).write(to: callerMarkerURL)
     }
 
-    deinit { try? fileManager.removeItem(at: containerURL) }
+    deinit { try? FileManager.default.removeItem(at: containerURL) }
 
     var ownedDirectoryURL: URL {
         containerURL.appendingPathComponent(ProtectedTemporarySessionImageBackingStore.ownedDirectoryName, isDirectory: true)
@@ -177,7 +258,17 @@ private final class TemporaryStoreFixture {
     var callerMarkerExists: Bool { fileManager.fileExists(atPath: callerMarkerURL.path) }
 
     func makeStore(filenameStrategy: any ProtectedTemporarySessionFilenameStrategy = NumericSessionImageFilenameStrategy()) throws -> ProtectedTemporarySessionImageBackingStore {
-        try ProtectedTemporarySessionImageBackingStore(temporaryContainerURL: containerURL, filenameStrategy: filenameStrategy)
+        if let removalFailures {
+            return try ProtectedTemporarySessionImageBackingStore(
+                temporaryContainerURL: containerURL,
+                filenameStrategy: filenameStrategy,
+                deletionInterceptor: removalFailures.interceptRemoval(at:)
+            )
+        }
+        return try ProtectedTemporarySessionImageBackingStore(
+            temporaryContainerURL: containerURL,
+            filenameStrategy: filenameStrategy
+        )
     }
 
     func createOrphanedOwnedFile() throws {

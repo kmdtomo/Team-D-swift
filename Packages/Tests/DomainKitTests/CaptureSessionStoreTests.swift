@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import DomainKit
 
-private enum ControlledStoreError: Error { case storeFailed }
+private enum ControlledStoreError: Error { case storeFailed, discardFailed }
 
 private actor ControlledBackingStore: SessionImageBackingStore {
     let policy: SessionImageStoragePolicy = .memoryOnly
@@ -13,6 +13,7 @@ private actor ControlledBackingStore: SessionImageBackingStore {
     private var suspendDiscardAll = false
     private var failNextStore = false
     private var writeThenFailNextStore = false
+    private var failNextDiscardAll = false
     private var storeStarted = false
     private var loadStarted = false
     private var discardAllStarted = false
@@ -28,6 +29,7 @@ private actor ControlledBackingStore: SessionImageBackingStore {
     func suspendNextDiscardAll() { suspendDiscardAll = true }
     func failStoreOnce() { failNextStore = true }
     func writeThenFailOnce() { writeThenFailNextStore = true }
+    func failDiscardAllOnce() { failNextDiscardAll = true }
     func waitForStoreStart() async { if storeStarted { return }; await withCheckedContinuation { storeStartWaiter = $0 } }
     func waitForLoadStart() async { if loadStarted { return }; await withCheckedContinuation { loadStartWaiter = $0 } }
     func waitForDiscardAllStart() async { if discardAllStarted { return }; await withCheckedContinuation { discardAllStartWaiter = $0 } }
@@ -57,10 +59,14 @@ private actor ControlledBackingStore: SessionImageBackingStore {
         }
         return value
     }
-    func discardAll(namespace: SessionStorageNamespace) async {
+    func discardAll(namespace: SessionStorageNamespace) async throws {
         if suspendDiscardAll {
             suspendDiscardAll = false; discardAllStarted = true; discardAllStartWaiter?.resume(); discardAllStartWaiter = nil
             await withCheckedContinuation { discardAllResume = $0 }
+        }
+        if failNextDiscardAll {
+            failNextDiscardAll = false
+            throw ControlledStoreError.discardFailed
         }
         bytes[namespace] = nil
     }
@@ -106,6 +112,27 @@ private func measurementDraft(imageID: ImageID, source: MeasurementSource = .use
         width: SessionMeasurementLine(start: widthStart, end: widthEnd, centimeters: 51.2),
         source: source
     )
+}
+
+private func storeImage(
+    _ store: CaptureSessionStore,
+    artifact: SessionArtifact,
+    scope: SessionOperationScope,
+    request: String,
+    bytes: Data = Data([1])
+) async throws {
+    let token = try await store.beginOperation(requestID: try RequestID(request), scope: scope)
+    try await store.storeImage(bytes, artifact: artifact, for: token)
+}
+
+private func commitArtifact(
+    _ store: CaptureSessionStore,
+    artifact: SessionArtifact,
+    scope: SessionOperationScope,
+    request: String
+) async throws {
+    let token = try await store.beginOperation(requestID: try RequestID(request), scope: scope)
+    try await store.commit(artifact, for: token)
 }
 
 @Test func measurementDraftRejectsNonFiniteOutOfRangeAndInvalidMarkerValues() throws {
@@ -201,6 +228,10 @@ private func measurementDraft(imageID: ImageID, source: MeasurementSource = .use
 @Test(arguments: [SessionOperationScope.capture(.front), .mask, .background])
 func suspendedStoreCancellationRetakeAndReplacementDiscardOnlyOwnHandle(_ scope: SessionOperationScope) async throws {
     let backing = ControlledBackingStore(); let store = CaptureSessionStore(imageStore: backing); try await store.beginSession(try SessionID("s"))
+    if scope == .mask {
+        let source = try await store.beginOperation(requestID: try RequestID("source"), scope: .capture(.front))
+        try await store.storeImage(Data([9]), artifact: .original(.front, try ImageID("front-source")), for: source)
+    }
     await backing.suspendNextStore()
     let token = try await store.beginOperation(requestID: try RequestID("old"), scope: scope)
     let artifact: SessionArtifact = switch scope { case .capture(let shot): .original(shot, try ImageID("old")); case .mask: .mask(try ImageID("old")); case .background: .background(try ImageID("old")); default: fatalError("test scope") }
@@ -210,7 +241,8 @@ func suspendedStoreCancellationRetakeAndReplacementDiscardOnlyOwnHandle(_ scope:
     await backing.resumeStore()
     await expectStale(task)
     let handle = SessionImageHandle(imageID: try ImageID("old"), token: token)
-    #expect(await backing.wasDiscarded(handle)); #expect(await store.snapshot()?.originals.isEmpty == true)
+    #expect(await backing.wasDiscarded(handle))
+    #expect(await store.snapshot()?.maskID == nil)
 }
 
 @Test func suspendedStoreBecomesStaleAcrossNewSessionAndSameImageIDCannotDeleteNewBytes() async throws {
@@ -250,11 +282,15 @@ func suspendedStoreCancellationRetakeAndReplacementDiscardOnlyOwnHandle(_ scope:
     try await store.beginSession(id)
     let first = try await store.beginOperation(requestID: try RequestID("first"), scope: .capture(.front)); try await store.storeImage(Data([1]), artifact: .original(.front, image), for: first)
     await backing.suspendNextDiscardAll()
-    let ending = Task { await store.endSession() }
+    let ending = Task { try await store.endSession() }
     await backing.waitForDiscardAllStart()
+    await #expect(throws: SessionStoreError.lifecycleTransitionInProgress) {
+        try await store.beginSession(id)
+    }
+    #expect(await store.snapshot() == nil)
+    await backing.resumeDiscardAll(); try await ending.value
     try await store.beginSession(id)
     let second = try await store.beginOperation(requestID: try RequestID("second"), scope: .capture(.front)); try await store.storeImage(Data([2]), artifact: .original(.front, image), for: second)
-    await backing.resumeDiscardAll(); await ending.value
     #expect(await store.snapshot()?.sessionID == id); #expect(await store.loadImage(image) == Data([2]))
 }
 
@@ -265,9 +301,168 @@ func suspendedStoreCancellationRetakeAndReplacementDiscardOnlyOwnHandle(_ scope:
     await backing.suspendNextLoad()
     let loading = Task { await store.loadImage(image) }
     await backing.waitForLoadStart()
-    await store.endSession()
+    try await store.endSession()
     await backing.resumeLoad()
     #expect(await loading.value == nil)
+}
+
+@Test func sourceRevisionRejectsAssessmentCompletionAfterOriginalReplacement() async throws {
+    let store = CaptureSessionStore()
+    let first = try ImageID("front-1")
+    let second = try ImageID("front-2")
+    let mask = try ImageID("mask")
+    let background = try ImageID("background")
+    let composite = try ImageID("composite")
+    try await store.beginSession(try SessionID("s"))
+    try await storeImage(store, artifact: .original(.front, first), scope: .capture(.front), request: "front-1")
+    try await storeImage(store, artifact: .mask(mask), scope: .mask, request: "mask")
+    try await storeImage(store, artifact: .background(background), scope: .background, request: "background")
+    try await storeImage(store, artifact: .composite(composite), scope: .composite, request: "composite")
+
+    let assessment = try await store.beginOperation(
+        requestID: try RequestID("assessment"),
+        scope: .assessment(.front)
+    )
+    #expect(assessment.sourceImageRevisions.map(\.imageID) == [first])
+
+    try await storeImage(store, artifact: .original(.front, second), scope: .capture(.front), request: "front-2")
+    let record = SessionAssessmentRecord(
+        shot: .front,
+        quality: .ok,
+        issues: [],
+        missingShots: [],
+        acceptedByApp: true
+    )
+    await #expect(throws: SessionStoreError.staleOperation) {
+        try await store.commit(.assessment(record), for: assessment)
+    }
+    let snapshot = try #require(await store.snapshot())
+    #expect(snapshot.assessments[.front] == nil)
+    #expect(snapshot.maskID == nil)
+    #expect(snapshot.compositeID == nil)
+    #expect(snapshot.backgroundID == background)
+    #expect(await store.loadImage(mask) == nil)
+    #expect(await store.loadImage(composite) == nil)
+}
+
+@Test func frontRetakeInvalidatesFrontDerivedArtifactsButPreservesIndependentState() async throws {
+    let store = CaptureSessionStore()
+    let front = try ImageID("front")
+    let measurement = try ImageID("measurement")
+    let mask = try ImageID("mask")
+    let background = try ImageID("background")
+    let composite = try ImageID("composite")
+    let draft = try measurementDraft(imageID: measurement)
+    try await store.beginSession(try SessionID("s"))
+    try await storeImage(store, artifact: .original(.front, front), scope: .capture(.front), request: "front")
+    try await storeImage(store, artifact: .original(.measurement, measurement), scope: .capture(.measurement), request: "measurement")
+    try await commitArtifact(
+        store,
+        artifact: .assessment(SessionAssessmentRecord(shot: .front, quality: .ok, issues: [], missingShots: [], acceptedByApp: true)),
+        scope: .assessment(.front),
+        request: "assessment"
+    )
+    try await commitArtifact(store, artifact: .measurementDraft(draft), scope: .measurement, request: "draft")
+    try await commitArtifact(store, artifact: .measurementApproval(.approvedManual), scope: .measurement, request: "approval")
+    try await storeImage(store, artifact: .mask(mask), scope: .mask, request: "mask", bytes: Data([2]))
+    try await storeImage(store, artifact: .background(background), scope: .background, request: "background", bytes: Data([3]))
+    try await storeImage(store, artifact: .composite(composite), scope: .composite, request: "composite", bytes: Data([4]))
+
+    try await store.retake(.front)
+
+    let snapshot = try #require(await store.snapshot())
+    #expect(snapshot.originals[.front] == front)
+    #expect(snapshot.originals[.measurement] == measurement)
+    #expect(snapshot.assessments[.front] == nil)
+    #expect(snapshot.maskID == nil)
+    #expect(snapshot.compositeID == nil)
+    #expect(snapshot.backgroundID == background)
+    #expect(snapshot.measurementDraft == draft)
+    #expect(snapshot.measurementApproval == .approvedManual)
+    #expect(await store.loadImage(mask) == nil)
+    #expect(await store.loadImage(composite) == nil)
+    #expect(await store.loadImage(background) == Data([3]))
+}
+
+@Test func measurementRetakeAndOriginalReplacementClearDraftAndApproval() async throws {
+    let store = CaptureSessionStore()
+    let first = try ImageID("measurement-1")
+    let second = try ImageID("measurement-2")
+    let draft = try measurementDraft(imageID: first)
+    try await store.beginSession(try SessionID("s"))
+    try await storeImage(store, artifact: .original(.measurement, first), scope: .capture(.measurement), request: "measurement-1")
+    try await commitArtifact(store, artifact: .measurementDraft(draft), scope: .measurement, request: "draft-1")
+    try await commitArtifact(store, artifact: .measurementApproval(.approvedCV), scope: .measurement, request: "approval-1")
+
+    try await store.retake(.measurement)
+    var snapshot = try #require(await store.snapshot())
+    #expect(snapshot.originals[.measurement] == first)
+    #expect(snapshot.measurementDraft == nil)
+    #expect(snapshot.measurementApproval == .unapproved)
+
+    try await commitArtifact(store, artifact: .measurementDraft(draft), scope: .measurement, request: "draft-2")
+    try await commitArtifact(store, artifact: .measurementApproval(.approvedManual), scope: .measurement, request: "approval-2")
+    try await storeImage(store, artifact: .original(.measurement, second), scope: .capture(.measurement), request: "measurement-2")
+    snapshot = try #require(await store.snapshot())
+    #expect(snapshot.originals[.measurement] == second)
+    #expect(snapshot.measurementDraft == nil)
+    #expect(snapshot.measurementApproval == .unapproved)
+}
+
+@Test func duplicateImageIDAcrossArtifactSlotsIsRejectedDeterministically() async throws {
+    let store = CaptureSessionStore()
+    let shared = try ImageID("shared")
+    try await store.beginSession(try SessionID("s"))
+    try await storeImage(store, artifact: .original(.front, shared), scope: .capture(.front), request: "front", bytes: Data([1]))
+    let mask = try await store.beginOperation(requestID: try RequestID("mask"), scope: .mask)
+
+    await #expect(throws: SessionStoreError.imageIDCollision) {
+        try await store.storeImage(Data([2]), artifact: .mask(shared), for: mask)
+    }
+    #expect(await store.snapshot()?.maskID == nil)
+    #expect(await store.loadImage(shared) == Data([1]))
+}
+
+@Test func endSessionCleanupFailureIsReportedAndRetryable() async throws {
+    let backing = ControlledBackingStore()
+    let store = CaptureSessionStore(imageStore: backing)
+    let image = try ImageID("front")
+    try await store.beginSession(try SessionID("s"))
+    try await storeImage(store, artifact: .original(.front, image), scope: .capture(.front), request: "front", bytes: Data([7]))
+    await backing.failDiscardAllOnce()
+
+    await #expect(throws: ControlledStoreError.discardFailed) {
+        try await store.endSession()
+    }
+    #expect(await store.snapshot()?.originals[.front] == image)
+    #expect(await store.loadImage(image) == Data([7]))
+
+    try await store.endSession()
+    #expect(await store.snapshot() == nil)
+    #expect(await store.loadImage(image) == nil)
+}
+
+@Test func newSessionCleanupFailureRetainsOldStateUntilRetrySucceeds() async throws {
+    let backing = ControlledBackingStore()
+    let store = CaptureSessionStore(imageStore: backing)
+    let oldSession = try SessionID("old")
+    let newSession = try SessionID("new")
+    let image = try ImageID("front")
+    try await store.beginSession(oldSession)
+    try await storeImage(store, artifact: .original(.front, image), scope: .capture(.front), request: "front", bytes: Data([8]))
+    await backing.failDiscardAllOnce()
+
+    await #expect(throws: ControlledStoreError.discardFailed) {
+        try await store.beginSession(newSession)
+    }
+    #expect(await store.snapshot()?.sessionID == oldSession)
+    #expect(await store.loadImage(image) == Data([8]))
+
+    try await store.beginSession(newSession)
+    let snapshot = try #require(await store.snapshot())
+    #expect(snapshot.sessionID == newSession)
+    #expect(snapshot.originals.isEmpty)
+    #expect(await store.loadImage(image) == nil)
 }
 
 @Test func retakePreservesExistingArtifactsAndMeasurementEdits() async throws {

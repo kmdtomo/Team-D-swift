@@ -52,6 +52,34 @@ public actor ProtectedTemporarySessionImageBackingStore: SessionImageBackingStor
         fileManager: FileManager = FileManager(),
         filenameStrategy: any ProtectedTemporarySessionFilenameStrategy = NumericSessionImageFilenameStrategy()
     ) throws {
+        self.ownedDirectory = try Self.prepareOwnedDirectory(
+            temporaryContainerURL: temporaryContainerURL,
+            fileManager: fileManager,
+            deletionInterceptor: nil
+        )
+        self.filenameStrategy = filenameStrategy
+    }
+
+    /// Internal fault-injection boundary used to verify retryable deletion.
+    /// Production clients use the public initializer above.
+    init(
+        temporaryContainerURL: URL,
+        filenameStrategy: any ProtectedTemporarySessionFilenameStrategy = NumericSessionImageFilenameStrategy(),
+        deletionInterceptor: @escaping @Sendable (URL) throws -> Void
+    ) throws {
+        self.ownedDirectory = try Self.prepareOwnedDirectory(
+            temporaryContainerURL: temporaryContainerURL,
+            fileManager: FileManager(),
+            deletionInterceptor: deletionInterceptor
+        )
+        self.filenameStrategy = filenameStrategy
+    }
+
+    private static func prepareOwnedDirectory(
+        temporaryContainerURL: URL,
+        fileManager: FileManager,
+        deletionInterceptor: (@Sendable (URL) throws -> Void)?
+    ) throws -> OwnedTemporaryDirectoryCleanup {
         let container = temporaryContainerURL.resolvingSymlinksInPath().standardizedFileURL
         let temporaryRoot = fileManager.temporaryDirectory.resolvingSymlinksInPath().standardizedFileURL
         guard Self.isStrictDescendant(container, of: temporaryRoot),
@@ -64,11 +92,14 @@ public actor ProtectedTemporarySessionImageBackingStore: SessionImageBackingStor
             throw ProtectedTemporarySessionImageBackingStoreError.unsafeContainer
         }
 
-        let ownedDirectory = OwnedTemporaryDirectoryCleanup(fileManager: fileManager, url: child)
+        let ownedDirectory = OwnedTemporaryDirectoryCleanup(
+            fileManager: fileManager,
+            url: child,
+            deletionInterceptor: deletionInterceptor
+        )
         try ownedDirectory.removeOwnedDirectoryIfPresent()
         try ownedDirectory.createProtectedDirectory()
-        self.ownedDirectory = ownedDirectory
-        self.filenameStrategy = filenameStrategy
+        return ownedDirectory
     }
 
     deinit {
@@ -106,9 +137,13 @@ public actor ProtectedTemporarySessionImageBackingStore: SessionImageBackingStor
         }
     }
 
-    public func discard(handle: SessionImageHandle) async {
-        guard let url = urls.removeValue(forKey: handle) else { return }
-        try? ownedDirectory.removeFile(at: url)
+    /// Deletes one artifact and only forgets its mapping after deletion succeeds.
+    /// A filesystem error is therefore observable and the same handle remains
+    /// available for an explicit retry.
+    public func discard(handle: SessionImageHandle) async throws {
+        guard let url = urls[handle] else { return }
+        try ownedDirectory.removeFileIfPresent(at: url)
+        urls[handle] = nil
     }
 
     public func load(handle: SessionImageHandle) async -> Data? {
@@ -116,17 +151,19 @@ public actor ProtectedTemporarySessionImageBackingStore: SessionImageBackingStor
         return try? Data(contentsOf: url, options: .uncached)
     }
 
-    public func discardAll(namespace: SessionStorageNamespace) async {
+    /// Deletes all artifacts in exactly one lifecycle namespace. Failed and
+    /// not-yet-attempted mappings remain registered so cleanup can be retried.
+    public func discardAll(namespace: SessionStorageNamespace) async throws {
         let matching = urls.keys.filter { $0.namespace == namespace }
-        for handle in matching { await discard(handle: handle) }
+        for handle in matching { try await discard(handle: handle) }
     }
 
     /// Explicit terminal cleanup. Subsequent stores are rejected rather than
     /// silently recreating temporary state.
-    public func cleanup() async {
+    public func cleanup() async throws {
+        try ownedDirectory.removeOwnedDirectoryIfPresent()
         urls.removeAll()
         cleanedUp = true
-        try? ownedDirectory.removeOwnedDirectoryIfPresent()
     }
 
     private func fileURL(for handle: SessionImageHandle) throws -> URL {
@@ -166,10 +203,16 @@ public actor ProtectedTemporarySessionImageBackingStore: SessionImageBackingStor
 private final class OwnedTemporaryDirectoryCleanup: @unchecked Sendable {
     let fileManager: FileManager
     let url: URL
+    private let deletionInterceptor: (@Sendable (URL) throws -> Void)?
 
-    init(fileManager: FileManager, url: URL) {
+    init(
+        fileManager: FileManager,
+        url: URL,
+        deletionInterceptor: (@Sendable (URL) throws -> Void)? = nil
+    ) {
         self.fileManager = fileManager
         self.url = url
+        self.deletionInterceptor = deletionInterceptor
     }
 
     deinit { try? removeOwnedDirectoryIfPresent() }
@@ -177,7 +220,10 @@ private final class OwnedTemporaryDirectoryCleanup: @unchecked Sendable {
     func fileExists(at url: URL) -> Bool { fileManager.fileExists(atPath: url.path) }
 
     func removeOwnedDirectoryIfPresent() throws {
-        if fileManager.fileExists(atPath: url.path) { try fileManager.removeItem(at: url) }
+        if fileManager.fileExists(atPath: url.path) {
+            try deletionInterceptor?(url)
+            try fileManager.removeItem(at: url)
+        }
     }
 
     func createProtectedDirectory() throws {
@@ -186,7 +232,14 @@ private final class OwnedTemporaryDirectoryCleanup: @unchecked Sendable {
         try applyFileProtection(to: url)
     }
 
-    func removeFile(at url: URL) throws { try fileManager.removeItem(at: url) }
+    func removeFile(at url: URL) throws {
+        try deletionInterceptor?(url)
+        try fileManager.removeItem(at: url)
+    }
+
+    func removeFileIfPresent(at url: URL) throws {
+        if fileManager.fileExists(atPath: url.path) { try removeFile(at: url) }
+    }
 
     func excludeFromBackup(_ url: URL) throws {
         var values = URLResourceValues()

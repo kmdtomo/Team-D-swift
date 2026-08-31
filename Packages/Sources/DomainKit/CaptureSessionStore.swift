@@ -34,6 +34,27 @@ public struct SessionStorageNamespace: Hashable, Sendable {
     }
 }
 
+public enum SessionImageArtifactSlot: Hashable, Sendable {
+    case original(Shot)
+    case mask
+    case background
+    case composite
+}
+
+/// The exact session image revision consumed by an asynchronous operation.
+/// The operation version is lifetime-unique within one `CaptureSessionStore`.
+public struct SessionImageRevision: Hashable, Sendable {
+    public let slot: SessionImageArtifactSlot
+    public let imageID: ImageID
+    public let operationVersion: UInt64
+
+    public init(slot: SessionImageArtifactSlot, imageID: ImageID, operationVersion: UInt64) {
+        self.slot = slot
+        self.imageID = imageID
+        self.operationVersion = operationVersion
+    }
+}
+
 public enum SessionOperationScope: Hashable, Sendable {
     case capture(Shot)
     case assessment(AssessableShot)
@@ -47,12 +68,20 @@ public struct SessionOperationToken: Hashable, Sendable {
     public let requestID: RequestID
     public let scope: SessionOperationScope
     public let version: UInt64
+    public let sourceImageRevisions: [SessionImageRevision]
     public var sessionID: SessionID { namespace.sessionID }
-    public init(namespace: SessionStorageNamespace, requestID: RequestID, scope: SessionOperationScope, version: UInt64) {
+    public init(
+        namespace: SessionStorageNamespace,
+        requestID: RequestID,
+        scope: SessionOperationScope,
+        version: UInt64,
+        sourceImageRevisions: [SessionImageRevision] = []
+    ) {
         self.namespace = namespace
         self.requestID = requestID
         self.scope = scope
         self.version = version
+        self.sourceImageRevisions = sourceImageRevisions
     }
 }
 public struct SessionImageHandle: Hashable, Sendable {
@@ -150,9 +179,12 @@ public enum SessionArtifact: Hashable, Sendable {
 
 public enum SessionStoreError: Error, Equatable, Sendable {
     case noActiveSession
+    case lifecycleTransitionInProgress
     case staleOperation
     case wrongScope
     case invalidArtifact
+    case missingSourceArtifact
+    case imageIDCollision
 }
 
 public enum SessionImageStoragePolicy: Equatable, Sendable {
@@ -162,9 +194,11 @@ public enum SessionImageStoragePolicy: Equatable, Sendable {
 public protocol SessionImageBackingStore: Sendable {
     var policy: SessionImageStoragePolicy { get }
     func store(_ bytes: Data, handle: SessionImageHandle) async throws
-    func discard(handle: SessionImageHandle) async
+    /// On failure the backing store must retain enough ownership metadata for retry.
+    func discard(handle: SessionImageHandle) async throws
     func load(handle: SessionImageHandle) async -> Data?
-    func discardAll(namespace: SessionStorageNamespace) async
+    /// On failure mappings for failed or unattempted deletions remain retryable.
+    func discardAll(namespace: SessionStorageNamespace) async throws
 }
 
 public actor InMemorySessionImageBackingStore: SessionImageBackingStore {
@@ -204,18 +238,12 @@ public struct CaptureSessionSnapshot: Equatable, Sendable {
     public let compositeID: ImageID?
 }
 
-private enum ImageArtifactSlot: Hashable {
-    case original(Shot)
-    case mask
-    case background
-    case composite
-}
-
 public actor CaptureSessionStore {
     private let imageStore: any SessionImageBackingStore
     private var namespace: SessionStorageNamespace?
     private var lifecycleGeneration: UInt64 = 0
     private var nextVersion: UInt64 = 0
+    private var isLifecycleTransitioning = false
     private var active: [SessionOperationScope: SessionOperationToken] = [:]
     private var originals: [Shot: ImageID] = [:]
     private var assessments: [AssessableShot: SessionAssessmentRecord] = [:]
@@ -224,26 +252,41 @@ public actor CaptureSessionStore {
     private var mask: ImageID?
     private var background: ImageID?
     private var composite: ImageID?
-    private var handles: [ImageArtifactSlot: SessionImageHandle] = [:]
+    private var handles: [SessionImageArtifactSlot: SessionImageHandle] = [:]
 
     public init(imageStore: any SessionImageBackingStore = InMemorySessionImageBackingStore()) {
         self.imageStore = imageStore
     }
 
     public func beginSession(_ id: SessionID) async throws {
-        let oldNamespace = namespace
+        guard !isLifecycleTransitioning else { throw SessionStoreError.lifecycleTransitionInProgress }
+        if let oldNamespace = namespace {
+            isLifecycleTransitioning = true
+            active = [:]
+            do {
+                try await imageStore.discardAll(namespace: oldNamespace)
+            } catch {
+                isLifecycleTransitioning = false
+                throw error
+            }
+        }
         lifecycleGeneration &+= 1
         clearMetadata()
         namespace = SessionStorageNamespace(sessionID: id, lifecycleGeneration: lifecycleGeneration)
-        if let oldNamespace {
-            await imageStore.discardAll(namespace: oldNamespace)
-        }
+        isLifecycleTransitioning = false
     }
 
     public func beginOperation(requestID: RequestID, scope: SessionOperationScope) throws -> SessionOperationToken {
+        guard !isLifecycleTransitioning else { throw SessionStoreError.lifecycleTransitionInProgress }
         guard let namespace else { throw SessionStoreError.noActiveSession }
         nextVersion &+= 1
-        let token = SessionOperationToken(namespace: namespace, requestID: requestID, scope: scope, version: nextVersion)
+        let token = SessionOperationToken(
+            namespace: namespace,
+            requestID: requestID,
+            scope: scope,
+            version: nextVersion,
+            sourceImageRevisions: try sourceImageRevisions(for: scope)
+        )
         active[scope] = token
         return token
     }
@@ -252,6 +295,7 @@ public actor CaptureSessionStore {
         try validate(token)
         guard !isImageArtifact(artifact) else { throw SessionStoreError.invalidArtifact }
         guard matches(artifact, token.scope) else { throw SessionStoreError.wrongScope }
+        try validateArtifactConsistency(artifact)
         apply(artifact); active[token.scope] = nil
     }
 
@@ -259,26 +303,47 @@ public actor CaptureSessionStore {
         try validate(token)
         guard matches(artifact, token.scope) else { throw SessionStoreError.wrongScope }
         guard let slot = imageSlot(of: artifact), let imageID = imageID(of: artifact) else { throw SessionStoreError.invalidArtifact }
+        guard !hasImageIDCollision(imageID, excluding: slot) else { throw SessionStoreError.imageIDCollision }
         let handle = SessionImageHandle(imageID: imageID, token: token)
         do {
             try await imageStore.store(bytes, handle: handle)
-        } catch {
-            await imageStore.discard(handle: handle)
-            throw error
+        } catch let storeError {
+            do {
+                try await imageStore.discard(handle: handle)
+            } catch let cleanupError {
+                throw cleanupError
+            }
+            throw storeError
         }
         do {
             try validate(token)
-        } catch {
-            await imageStore.discard(handle: handle)
-            throw error
+        } catch let validationError {
+            do {
+                try await imageStore.discard(handle: handle)
+            } catch let cleanupError {
+                throw cleanupError
+            }
+            throw validationError
+        }
+        guard !hasImageIDCollision(imageID, excluding: slot) else {
+            try await imageStore.discard(handle: handle)
+            throw SessionStoreError.imageIDCollision
         }
 
         let oldHandle = handles[slot]
+        var obsoleteHandles = invalidateDependencies(changedSlot: slot)
         handles[slot] = handle
         apply(artifact)
         active[token.scope] = nil
         if let oldHandle {
-            await imageStore.discard(handle: oldHandle)
+            obsoleteHandles.append(oldHandle)
+        }
+
+        // Metadata switches to the new revision atomically before backing cleanup.
+        // A thrown cleanup error means the new state is authoritative while the
+        // backing store retains failed mappings for a later namespace cleanup.
+        for obsoleteHandle in Set(obsoleteHandles) {
+            try await imageStore.discard(handle: obsoleteHandle)
         }
     }
 
@@ -287,13 +352,20 @@ public actor CaptureSessionStore {
         active[token.scope] = nil
     }
 
-    public func retake(_ shot: Shot) throws {
+    public func retake(_ shot: Shot) async throws {
+        guard !isLifecycleTransitioning else { throw SessionStoreError.lifecycleTransitionInProgress }
         guard namespace != nil else { throw SessionStoreError.noActiveSession }
-        active = [:] // Retakes invalidate in-flight work but preserve already committed artifacts.
+        // Retakes invalidate in-flight work, then remove only artifacts derived
+        // from the retaken source while retaining independent committed state.
+        active = [:]
+        let obsoleteHandles = invalidateDependencies(changedSlot: .original(shot))
+        for obsoleteHandle in Set(obsoleteHandles) {
+            try await imageStore.discard(handle: obsoleteHandle)
+        }
     }
 
     public func snapshot() -> CaptureSessionSnapshot? {
-        guard let namespace else { return nil }
+        guard !isLifecycleTransitioning, let namespace else { return nil }
         return CaptureSessionSnapshot(
             sessionID: namespace.sessionID,
             originals: originals,
@@ -307,21 +379,38 @@ public actor CaptureSessionStore {
     }
 
     public func loadImage(_ imageID: ImageID) async -> Data? {
-        guard let namespace, let (slot, handle) = handles.first(where: { $0.value.imageID == imageID }) else { return nil }
+        guard !isLifecycleTransitioning,
+              let namespace,
+              let (slot, handle) = handles.first(where: { $0.value.imageID == imageID })
+        else { return nil }
         let bytes = await imageStore.load(handle: handle)
-        guard self.namespace == namespace, handles[slot] == handle else { return nil }
+        guard !isLifecycleTransitioning, self.namespace == namespace, handles[slot] == handle else { return nil }
         return bytes
     }
 
-    public func endSession() async {
+    public func endSession() async throws {
+        guard !isLifecycleTransitioning else { throw SessionStoreError.lifecycleTransitionInProgress }
         guard let oldNamespace = namespace else { return }
+        isLifecycleTransitioning = true
+        active = [:]
+        do {
+            try await imageStore.discardAll(namespace: oldNamespace)
+        } catch {
+            isLifecycleTransitioning = false
+            throw error
+        }
         lifecycleGeneration &+= 1
         clearMetadata()
-        await imageStore.discardAll(namespace: oldNamespace)
+        isLifecycleTransitioning = false
     }
 
     private func validate(_ token: SessionOperationToken) throws {
-        guard namespace == token.namespace, active[token.scope] == token else {
+        guard !isLifecycleTransitioning,
+              namespace == token.namespace,
+              active[token.scope] == token,
+              let currentSources = try? sourceImageRevisions(for: token.scope),
+              currentSources == token.sourceImageRevisions
+        else {
             throw SessionStoreError.staleOperation
         }
     }
@@ -339,7 +428,9 @@ public actor CaptureSessionStore {
         switch artifact {
         case .original(let shot, let id): originals[shot] = id
         case .assessment(let value): assessments[value.shot] = value
-        case .measurementDraft(let value): draft = value
+        case .measurementDraft(let value):
+            draft = value
+            approval = .unapproved
         case .measurementApproval(let value): approval = value
         case .mask(let id): mask = id
         case .background(let id): background = id
@@ -358,7 +449,7 @@ public actor CaptureSessionStore {
         }
     }
 
-    private func imageSlot(of artifact: SessionArtifact) -> ImageArtifactSlot? {
+    private func imageSlot(of artifact: SessionArtifact) -> SessionImageArtifactSlot? {
         switch artifact {
         case .original(let shot, _): .original(shot)
         case .mask: .mask
@@ -366,6 +457,96 @@ public actor CaptureSessionStore {
         case .composite: .composite
         default: nil
         }
+    }
+
+    private func validateArtifactConsistency(_ artifact: SessionArtifact) throws {
+        switch artifact {
+        case .measurementDraft(let value):
+            guard originals[.measurement] == value.measurementImageID else {
+                throw SessionStoreError.invalidArtifact
+            }
+        case .measurementApproval(let value):
+            if value != .unapproved {
+                guard let draft,
+                      originals[.measurement] == draft.measurementImageID
+                else { throw SessionStoreError.invalidArtifact }
+            }
+        default:
+            break
+        }
+    }
+
+    private func hasImageIDCollision(_ imageID: ImageID, excluding slot: SessionImageArtifactSlot) -> Bool {
+        handles.contains { existingSlot, handle in
+            existingSlot != slot && handle.imageID == imageID
+        }
+    }
+
+    private func sourceImageRevisions(for scope: SessionOperationScope) throws -> [SessionImageRevision] {
+        switch scope {
+        case .capture, .background:
+            return []
+        case .assessment(let shot):
+            return [try revision(for: .original(shot.shot))]
+        case .measurement:
+            return [try revision(for: .original(.measurement))]
+        case .mask:
+            return [try revision(for: .original(.front))]
+        case .composite:
+            return [
+                try revision(for: .original(.front)),
+                try revision(for: .mask),
+                try revision(for: .background),
+            ]
+        }
+    }
+
+    private func revision(for slot: SessionImageArtifactSlot) throws -> SessionImageRevision {
+        guard let handle = handles[slot] else { throw SessionStoreError.missingSourceArtifact }
+        return SessionImageRevision(
+            slot: slot,
+            imageID: handle.imageID,
+            operationVersion: handle.token.version
+        )
+    }
+
+    private func invalidateDependencies(changedSlot: SessionImageArtifactSlot) -> [SessionImageHandle] {
+        var obsoleteHandles: [SessionImageHandle] = []
+
+        switch changedSlot {
+        case .original(.front):
+            assessments[.front] = nil
+            active[.assessment(.front)] = nil
+            active[.mask] = nil
+            active[.composite] = nil
+            if let handle = handles.removeValue(forKey: .mask) { obsoleteHandles.append(handle) }
+            if let handle = handles.removeValue(forKey: .composite) { obsoleteHandles.append(handle) }
+            mask = nil
+            composite = nil
+
+        case .original(.back):
+            assessments[.back] = nil
+            active[.assessment(.back)] = nil
+
+        case .original(.tag):
+            assessments[.tag] = nil
+            active[.assessment(.tag)] = nil
+
+        case .original(.measurement):
+            active[.measurement] = nil
+            draft = nil
+            approval = .unapproved
+
+        case .mask, .background:
+            active[.composite] = nil
+            if let handle = handles.removeValue(forKey: .composite) { obsoleteHandles.append(handle) }
+            composite = nil
+
+        case .composite:
+            break
+        }
+
+        return obsoleteHandles
     }
 
     private func clearMetadata() {
@@ -379,5 +560,15 @@ public actor CaptureSessionStore {
         background = nil
         composite = nil
         handles = [:]
+    }
+}
+
+private extension AssessableShot {
+    var shot: Shot {
+        switch self {
+        case .front: .front
+        case .back: .back
+        case .tag: .tag
+        }
     }
 }

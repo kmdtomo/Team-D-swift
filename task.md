@@ -278,10 +278,10 @@
 ### T03-03 検証記録（2026-08-31）
 
 - Verification (2026-08-31):
-  - commit/build: `936f7cc build: add explicit fixture and live configurations`, `917ff57 fix: surface explicit live configuration failures`, `99f1f9f test: scan rembg and private endpoint configuration`; Xcode 26.2 (17C52), iPhone 16 Pro Simulator (iOS 18.5, arm64)
-  - automated tests: `python3 scripts/verify_t03_03.py` passed; `python3 scripts/test_verify_t03_03.py` passed 14/14; `swift test --package-path Packages --filter RuntimeServiceCompositionTests` passed 6/6; `Debug-Fixture` and `Debug-Live` app builds both reported `BUILD SUCCEEDED`
-  - fixture: `Debug-Fixture` app bundle reported `TeamDMode=fixture`; recursive plist/binary/resource scan passed and the fixture composition created no network session
-  - live: `Debug-Live` app bundle reported `TeamDMode=live`; recursive plist/binary/resource scan passed; unavailable live provider produced the typed Japanese live failure while the fixture provider spy remained uncalled
+  - commit/build: `936f7cc build: add explicit fixture and live configurations`, `1ce09d7 feat: compose build-selected fixture and live modes`, `917ff57 fix: surface explicit live configuration failures`, `99f1f9f test: scan rembg and private endpoint configuration`, `7ba27e5 test: inspect embedded plist secrets`, authoritative candidate `4154679 fix: fail closed on build mode mismatches` (同一patchをmainへ`f9d5431`として統合); Xcode 26.2 (17C52), Swift 6.2.3, generic iOS Simulator
+  - automated tests: candidate `4154679`でtask ownerが1回のauthoritative commandを順次実行し、`python3 -m unittest scripts/test_verify_t03_03.py` 16/16、static verifier、`swift test --package-path Packages --filter RuntimeServiceCompositionTests` 7/7、`Debug-Fixture` / `Debug-Live` / `Release` buildとexpected-mode product scanが合格した。警告はFixture/Live各1件の既知AppIntents警告のみ、Release 0件、unexpected 0件。`Debug-Live TEAM_D_MODE=fixture`の負経路はexpected `live` scanが意図どおり拒否し、compile-selected live identityを保持したconfiguration failureを確認した。task scratchは記録後に削除済み
+  - fixture: `Debug-Fixture` app bundleは`TeamDMode=fixture`で、再帰plist/binary/resource scanに合格し、fixture compositionはnetwork sessionを生成しない。bundle mode不一致時はfixture providerを起動せずconfiguration failureで停止する
+  - live: `Debug-Live`と`Release` app bundleは`TeamDMode=live`で、公開HTTPS/WSS placeholder以外のprivate IPv4/IPv6 endpoint、rembg内部設定、secretを含まない。unavailable live providerとmode不一致はtyped Japanese live/configuration failureを表示し、fixture providerを呼ばない
   - device: not required
   - limitations: shared backend and LiveKit Room connectivity remain owned by T03-05/T08; this configuration task does not claim those live integrations are available
 

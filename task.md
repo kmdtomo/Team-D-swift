@@ -64,13 +64,13 @@
 
 ## 依存関係の読み方
 
-- `[x]`は、最新の明示運用により、実装と対応test codeをcommit済みの`code_ready_unverified`、または最終受け入れ済みを示す。個々の作業状態と残るgateは実装記録で区別し、`[x]`だけでbuild、test、live、実機、最終受け入れを済みと表現しない。`[ ]`の先行タスクがあっても、後続が必要とする契約、protocol、有限型、fixture、golden、mock/fake、画像期待値、または技術判断が安定していれば、競合しない実装とfocused testへ着手してよい。
+- `[x]`は、タスク全体のproduction実装と対応test codeがcommit済みで、1回の限定的なsource reviewにP0がないことを示す。意味のある自動testを作れない文書専用・物理作業専用タスクだけ、理由付きの`tests authored: not applicable`を認める。commitがあるだけ、protocol/mockだけのpartial slice、必要なapp wiringの欠落、未解消P0、未commit候補は`[ ]`のままとする。個々の作業状態と残るgateは実装記録で区別し、`[x]`だけでbuild、test、live、実機、最終受け入れを済みと表現しない。`[ ]`の先行タスクがあっても、後続が必要とする契約、protocol、有限型、fixture、golden、mock/fake、画像期待値、または技術判断が安定していれば、競合しない実装とfocused testへ着手してよい。
 - `依存する先行タスク`は、特記がなければ**統合依存または受け入れ依存**を表す。着手を止める場合は、タスクIDではなく「未確定のwire意味」「必要protocol未提供」「同一fileのactive owner」「未承認の不可逆な技術判断」「未解決の機能要件」のように、欠けている成果物・決定と解除条件を記録する。
 - 実機、credential、共有backend、live環境の不在は、分離可能なfixture/mock実装を止めない。たとえばT05の実機証跡を待つ間もfake camera上のT06、未提供HTTP endpointを待つ間も凍結schema/golden上のT09/T12/T14、live mask生成を待つ間も既知mask/背景上のT15/T16を進められる。ただし該当する統合、live、実機、最終受け入れは未完了のままにする。
 - T11-02は既知cornerを持つfixture corpusで検出器・計測器の分離実装を始められるが、Apple標準framework採否の判断とT11の受け入れにはT11-01の物理corpusと実測証跡を必須とする。
 - 章番号は要求された成果物構成であり、実行順そのものではない。**T11-01〜T11-03はT02/T03直後に実行する最初の技術検証Milestone M0**とし、Apple標準frameworkの採寸可否をfeature実装より先に判定する。
 - `fixture / live`は、そのタスクの確認モードを表す。`両方`はfixtureとliveを別々に合格させる意味であり、自動fallbackを意味しない。
-- 自動テストだけでカメラ関連を完了扱いにしない。`実機確認: 必須`のタスクは、runbookの証跡を残して初めて完了する。
+- 自動テストだけでカメラ関連を`accepted`扱いにしない。`実機確認: 必須`のタスクは、runbookの証跡を残して初めて最終受け入れされる。
 
 ### 作業状態とテスト実行単位
 
@@ -78,18 +78,36 @@
 |---|---|---|
 | `planned` | 未着手 | `[ ]` |
 | `in_progress` | ownerが実装・focused testを進行中 | `[ ]` |
-| `code_ready_unverified` | 実装とテストコードをcommit済みだが、build/testは最終検証まで未実行 | `[x]`（実装commit済み） |
-| `implementation_ready` | 最終検証で対象buildと自動テストが成功し、統合・live・実機証跡を待つ | `[ ]` |
-| `integration_ready` | 必要な他レーンとの接続確認まで完了し、残る受け入れgateを待つ | `[ ]` |
+| `code_ready_unverified` | タスク全体の実装とtest codeをcommitし、限定source reviewでP0なし。build/testは未実行 | `[x]` |
+| `implementation_ready` | 最終検証で対象buildと自動テストが成功し、統合・live・実機証跡を待つ | `[x]` |
+| `integration_ready` | 必要な他レーンとの接続確認まで完了し、残る受け入れgateを待つ | `[x]` |
 | `accepted` | 全完了条件と必要なfixture/live/実機証跡が揃った | `[x]` |
-| `blocked` | 欠けている具体的成果物、owner、解除条件を記録済み | `[ ]` |
+| `blocked` | blockerのためタスク全体のproduction実装またはtest codeが未完成。成果物、owner、解除条件を記録済み | `[ ]` |
 
-- Phase 1は実装専用とする。各並列sliceはtask ID・lane・参照artifact/version・所有file・最終検証で実行すべきtest・未統合gateを明示し、production変更とテストコードを1〜2個の意味あるcommit（必要時のみ最大3個）にまとめる。workerは`swift build`、`swift test`、`xcodebuild`、XCUITest、app起動、clean buildなどcompile/linkを伴うcommandを実行せず、build artifactを生成しない。source-only lint、schema/doc検証、secret scan、`git diff --check`だけは許可する。
+- Phase 1は実装専用とする。各並列sliceはtask ID・lane・参照artifact/version・所有file・最終検証で実行すべきtest・未統合gateを明示し、production変更とテストコードを1〜2個の意味あるcommit（必要時のみ最大3個）にまとめる。挙動を自動検証できるタスクは対応test codeを必須とし、自動testが不適切なタスクは理由を記録して`not applicable`とする。workerは`swift build`、`swift test`、`xcodebuild`、XCUITest、app起動、clean buildなどcompile/linkを伴うcommandを実行せず、build artifactを生成しない。source-only lint、schema/doc検証、secret scan、`git diff --check`だけは許可する。
 - 各workerの担当境界は、最初のuser requestまたはspawn時に明示されたtask ID・lane・file・deliverableだけに固定する。`task.md`の未完了項目、依存、隣接code、空きworker枠、発見したfollow-upは担当拡張の許可ではない。最初に列挙された範囲をcommitして報告したら終了し、次のtaskを選ばず、同じworkerへ再割当しない。親AIも自分の最初の担当範囲内だけを委譲し、その全件がcommitまたは具体的blockedになった時点で終了する。`task.md`全体が担当なのは最初の依頼が明示的にそう指定した場合だけとする。
-- 子workerは候補SHA、変更file、書いたが未実行のtest、残るgateを返して`code_ready_unverified`で終了する。`task.md`や共有project fileは更新せず、親AIは自分の固定担当範囲に含まれる場合だけcommit済み候補をbuildなしで統合する。`code_ready_unverified`をbuild済み・test済み・動作済みと表現してはならない。
+- 子workerは候補SHA、変更file、書いたが未実行のtest、残るgateを返す。`task.md`や共有project fileは更新せず、親AIは自分の固定担当範囲に含まれる候補だけをbuildなしで統合し、タスク全体を1回source reviewする。P0がなければ親AIが該当taskだけを`[x]`へ変更して実装記録をcommitしてから、その担当範囲を終了する。親のいない単独ownerは自分のtask blockだけを同様に更新する。コードcommitだけを終了triggerにせず、`code_ready_unverified`をbuild済み・test済み・動作済みと表現してはならない。
+- source reviewは1回に限定し、P0だけをチェックのblockerとする。P1〜P3は必要なら小課題として記録するが、現在タスクの追加実装、再review、build、再openを要求しない。P0修正後はその修正差分だけを再確認する。
 - Phase 2は、外部要因でblockedなものを除く全ローカル実装が`code_ready_unverified`になった後にだけ開始する。1つのcleanな統合worktree、1つの再利用可能なscratch/DerivedData root、1人のbuild検証・修正ownerを使い、他workerは同じworktreeを編集しない。
 - 検証ownerは統合diff全体をreviewし、package/app compile、focused/full test、contract/fixture test、app integration build、XCUITest、指定されたclean clone・性能・実機・live gateの順に検証する。compiler/linker error、必須test failure、必須受け入れ条件違反だけを`P0`として修正し、変更後にだけ再実行する。`P1`〜`P3`は小課題として記録するだけでPhase 2を延長しない。
-- 最終統合SHA、Xcode/Swift/依存version、commandと結果、fixture/live/device証跡、残る外部gateを記録してから、各taskを`implementation_ready`、`integration_ready`、または`accepted`へ進める。実装commit時点でチェックしたtaskは、この証跡が揃うまで`code_ready_unverified`であり、`accepted`ではない。記録後に再生成可能なscratch/DerivedData/test resultを削除する。
+- 最終統合SHA、Xcode/Swift/依存version、commandと結果、fixture/live/device証跡、残る外部gateを記録してから、各taskを`implementation_ready`、`integration_ready`、または`accepted`へ進める。実装commit時点でチェックしたtaskは、この証跡が揃うまで`code_ready_unverified`であり、`accepted`ではない。Phase 2の失敗だけでcheckboxを外さず、失敗からタスク全体の実装欠落が判明した場合だけ`[ ]`へ戻す。記録後に再生成可能なscratch/DerivedData/test resultを削除する。
+
+### 実装チェック記録
+
+taskを`[x]`へ変更するcommitには、既存の最終`Verification`記録とは別に次の記録をtask直下へ残す。task記録commit自身のSHAはGit履歴から追跡し、本文への自己参照は要求しない。既に最終受け入れ証跡があるtaskは、その証跡をこの形式へ機械的に書き換えなくてよい。2026-09-01以前の同等な進捗記録も書式だけを理由に一括で書き換えたりチェックを外したりせず、タスク全体のproduction実装、test code、またはP0の具体的な欠落が判明した場合だけ修正する。
+
+```markdown
+- Implementation review (YYYY-MM-DD):
+  - status: `code_ready_unverified`
+  - commits: `<production/test SHA>`
+  - production scope: `<タスク全体の実装対象を満たした要約>`
+  - tests authored: `<test pathと主要case>` または `not applicable: <理由>`
+  - source review: `P0 none`（P1〜P3は別記し、現在taskを延長しない）
+  - execution: `build/test not run; deferred to Phase 2`
+  - pending gates: `<build/test/integration/fixture/live/device/acceptance>` または `none`
+```
+
+この記録、タスク全体のproduction実装、対応test codeまたは妥当な`not applicable`理由、`P0 none`のいずれかが欠ける場合はチェックしない。Phase 2の最終受け入れ証跡は従来の`Verification`形式で追記し、`accepted`かどうかはcheckbox単独ではなく状態と証跡を合わせて判断する。
 
 ## 1. 既存資産の棚卸しと移行境界
 
@@ -793,7 +811,7 @@ T01 棚卸し
 
 ## 並行実行可能なまとまり
 
-- 親AIは最初に明示された自分の担当範囲内だけで、各レーンのactive ownerと共有file ownershipを確認し、成果物readyなbounded taskをworkerへ割り当てる。空き枠やworker完了を理由に担当範囲外のtaskを追加せず、各workerは割り当て分を`code_ready_unverified`としてcommit・報告したら終了する。親AIも最初の担当範囲が全件commitまたは具体的blockedになった時点で終了する。
+- 親AIは最初に明示された自分の担当範囲内だけで、各レーンのactive ownerと共有file ownershipを確認し、成果物readyなbounded taskをworkerへ割り当てる。空き枠やworker完了を理由に担当範囲外のtaskを追加しない。各子workerは割り当て分のproduction/test候補と実装review用情報をcommit・報告したら終了し、親AIがP0 source review、`[x]`、実装記録を直列にcommitする。親AIも最初の担当範囲が全件`code_ready_unverified`として記録済み、または具体的blockedになった時点で終了する。
 - T02のpackage/target境界とfixture build基盤が利用可能になったら、T11の採寸PoCを開始する。同時にレーンA/CのT03契約、レーンFのfixture provenance作業を並行できる。有限状態とevent contractが安定した時点でT04、capture session protocolの所有境界が合意できた時点でT05基盤も並行する。
 - capture frame/photo protocolとfake cameraが利用可能になったら、T05の実機受け入れを待たず、T06のガイド/UI、T07のローカル品質、T08-01のLiveKit camera spikeを別packageで並行できる。
 - version付きHTTP schemaとgolden payloadが確定したら、live endpointの提供を待たず、T09撮影後判定client、T12-02測定点client、T14 mask/background clientをレーンC内で担当分割できる。ただし実際の呼出gateはT10/T13完了まで開けず、live受け入れは共有backend提供後に行う。

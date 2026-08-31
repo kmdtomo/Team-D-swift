@@ -14,7 +14,7 @@ Keep product behavior explicit, traceable, and independent of the Web implementa
 3. Inspect versioned contracts, fixtures, and backend availability when the question touches wire behavior.
 4. Treat the source repository only as read-only evidence at the SHA recorded in the repository. Do not silently follow its moving `main`.
 
-The user's latest explicit decision overrides documents. Otherwise, `requirements.md` defines product behavior and delivery constraints, frozen wire contracts define payload shape, and `task.md` defines lanes plus start/integration/acceptance dependencies. A task checkbox is final acceptance evidence, not a universal start gate. Surface a conflict rather than choosing silently.
+The user's latest explicit decision overrides documents. Otherwise, `requirements.md` defines product behavior and delivery constraints, frozen wire contracts define payload shape, and `task.md` defines lanes plus start/integration/acceptance dependencies. A task checkbox is committed implementation evidence after a P0-free bounded source review, not final acceptance and not a universal start gate. Build/test/live/device evidence and `accepted` status remain separate. Surface a conflict rather than choosing silently.
 
 ## Classify the request
 

@@ -1,13 +1,13 @@
 # Team-D iPhone ネイティブ版 要件定義
 
-最終更新: 2026-08-31
+最終更新: 2026-09-01
 
 参照元snapshot: [`neko-jpg/Team-D@44065d41e8906d34e5d8e11d7cd4cc14b25d17f2`](https://github.com/neko-jpg/Team-D/tree/44065d41e8906d34e5d8e11d7cd4cc14b25d17f2)
 
 ## 0. 文書の位置づけ
 
 - 本文書はSwift/iPhone版の機能要件、非機能要件、受け入れ条件の正本である。
-- [`task.md`](./task.md)は作業レーン、着手に必要な成果物、統合・最終受け入れの依存を定義する。チェックボックスは最終受け入れ状態だけを表し、後続タスクの一律な着手許可には使わない。本文書の要件を上書きしない。
+- [`task.md`](./task.md)は作業レーン、着手に必要な成果物、統合・最終受け入れの依存を定義する。チェックボックスは「タスク全体のproduction実装と対応test codeがcommit済みで、1回の限定的なsource reviewにP0がない」ことを表す。build/test/live/実機および最終受け入れは別の作業状態と証跡で追跡し、チェックボックスを後続タスクの一律な着手許可には使わない。本文書の要件を上書きしない。
 - 参照元の`requirements.md`、`architecture.md`、OpenSpecは調査根拠であり、SwiftリポジトリにコピーしたりOpenSpec運用を導入したりしない。
 - 参照元の`main`が更新されても自動同期しない。要件、API契約、fixture、backend availabilityの差分を確認し、利用者の明示的な承認後にsnapshotと本文書を更新する。
 - 矛盾がある場合は、利用者の最新の明示指示、本文書、version固定済みwire contract、`task.md`の順に優先し、独断で機能要件を変えない。
@@ -198,21 +198,22 @@
 ### NFR-3. テストと証跡
 
 - domain/geometry/codecはSwift TestingまたはXCTest、統合はXCTest、主要ユーザーフローはXCUITestで検証する。
-- 1タスクのコードとfocused testをすべて書き終えた候補SHAに対し、task ownerが最後に**1回のauthoritative verification run**を実行する。これは対象targetのbuildと、そのタスクを直接検証する最小のunit/contract/snapshot testをまとめた1つのcommandまたはscript invocationとする。fixture/liveなど複数構成が必要な場合も、この最後のrun内で順番に実行する。
-- 実装途中の小編集、subcommit、review指摘ごとに成功buildを挟まない。authoritative runが失敗した場合は、原因となるcode/config/testを変更した後だけ再実行できる。成功結果は候補SHA、依存解決結果、Xcode/Swift version、実行commandとともに記録し、同一SHAを親AI、監査AI、別workerが再build・再testしない。
-- 親AIとreviewerは、差分とtask ownerのauthoritative resultを監査する。候補SHA、依存、共有project設定、契約、またはtest自体が変わった場合、証跡が欠落・破損した場合、再現性に具体的な疑義がある場合だけ、理由を記録して再実行する。
-- 影響packageの全testとapp integration buildは統合waveごとにintegration ownerが1回、全XCUITestはユーザーフローの縦スライスまたはT17/T19の節目、clean clone・長時間性能・実機matrix・live end-to-endは該当Milestoneと最終受け入れで実行する。同じ未変更範囲の重い検証を各タスクや各commitで重複実行しない。
-- `xcodebuild`、全package `swift test`、clean build、XCUITestなどの重いbuild/testはrepository全体で同時に1件だけ実行する。各タスクはscratch/DerivedData pathを1つだけ所有・再利用し、authoritative resultを記録した後に再生成可能なscratchを削除する。別workerが別scratchを作って同じSHAを再検証しない。
+- Phase 1では、各タスクのproduction実装と、その完了条件・失敗経路を直接検証するfocused test codeを同じ作業単位で作成・commitする。`swift build`、`swift test`、`xcodebuild`、XCUITest、app起動、clean buildなどcompile/link/testを伴うcommandは実行しない。
+- 自動化可能な挙動があるタスクでは対応test codeを必須とする。文書専用、物理撮影専用など意味のある自動testを作れないタスクだけ、`tests authored: not applicable`と理由を実装記録へ明記できる。チェックを得るための空testや常時成功testは作らない。
+- タスク全体の実装対象とtest codeがcommitされた候補に対し、task ownerまたはintegration ownerがsource-onlyの限定reviewを1回行う。明示要件違反、security/privacy/data-lifetime/pixel-provenance違反、primary flow crash/data loss、統合不能な欠落だけをP0とし、P0がなければ`code_ready_unverified`としてチェックできる。P1〜P3は必要なら小課題として記録するだけで、追加実装・再review・buildの理由にしない。
+- Phase 2は全ローカル実装の統合後に、1人のverification-and-fix ownerが1つのclean worktreeと1つの再利用可能なscratch/DerivedData rootで実行する。package/app compile、focused/full test、contract/fixture test、app integration build、XCUITest、該当するclean clone・性能・実機・live gateを順に検証する。
+- Phase 2でcompiler/linker errorまたは必須test failureが見つかった場合はP0として修正し、原因となるcode/config/testを変更した後だけ再実行する。候補SHA、依存、共有project設定、契約、testが変わらず証跡も健全なら、親AI、監査AI、別workerが同じ成功runを重複しない。
+- `xcodebuild`、全package `swift test`、clean build、XCUITestなどの重いbuild/testはrepository全体で同時に1件だけ実行する。Phase 2の共通scratchを再利用し、最終証跡を記録した後に再生成可能なartifactを削除する。
 - `fixture/live: 両方`は独立した2つの合格を意味し、fixture成功をlive成功の代用にしない。
 - カラー、レイアウト、撮影、回転、LiveKit publish、熱、採寸精度、保存は`task.md`で指定した実機gateを満たす。
 
 ### NFR-4. 開発進行と並行性
 
-- `task.md`の`[x]`は、列挙された完了条件、自動テスト、fixture/live、実機確認をすべて満たした**最終受け入れ済み**だけを表す。`[ ]`は未着手、進行中、実装準備済み、統合待ち、外部block中を含み、`[ ]`であること自体を後続タスクの着手禁止理由にしない。
+- `task.md`の`[x]`は、(1) 列挙された実装対象を部分sliceではなくタスク全体としてproduction codeへ反映し、(2) 対応test codeまたは妥当な`not applicable`理由をcommitし、(3) 1回のsource reviewでP0がなく、(4) commit SHAと未実行gateを実装記録へ残したことを表す。commitが存在するだけ、mock/protocolだけ、app wiring欠落、未解消P0、未commitの候補は`[ ]`のままとする。
 - 後続タスクは、必要なversion付き契約、有限型、protocol、fixture、golden payload、mock/fake、画像期待値、または技術判断が利用可能で安定していれば、先行タスクが未受け入れでも分離可能な実装とfocused testへ着手できる。先行タスクIDだけを理由に待機せず、欠けている具体的な成果物または未決定事項を示す。
 - 依存は「着手依存」「統合依存」「受け入れ依存」に分ける。未確定のwire意味、共有schema/protocol、同一fileの並行owner、未承認の不可逆な技術判断、未解決の機能要件だけを着手blockerとする。実機、credential、共有backend、live環境の不在は、分離可能なfixture/mock実装を止めず、該当する統合または最終受け入れだけをblockする。
-- 作業状態は少なくとも`planned`、`in_progress`、`implementation_ready`、`integration_ready`、`accepted`、`blocked`を区別する。`implementation_ready`はfocused testを通した分離実装、`integration_ready`は必要な他レーンとの接続確認済み、`accepted`だけが`[x]`に対応する。
-- 各並列sliceは開始時に、参照するartifactとversion、所有file、focused test、まだ満たしていない統合・live・実機・受け入れgateを記録する。部分成果を`[x]`にせず、後続workerが再調査や重複検証なしで利用できる状態にする。
+- 作業状態は少なくとも`planned`、`in_progress`、`code_ready_unverified`、`implementation_ready`、`integration_ready`、`accepted`、`blocked`を区別する。`code_ready_unverified`以降は`[x]`を維持し、build/test/live/実機の進行と最終受け入れは状態名とverification記録で判定する。Phase 2失敗だけを理由に機械的に`[ ]`へ戻さず、失敗によってタスク全体の実装欠落が判明した場合だけ`[ ]`へ戻す。
+- 各並列sliceは開始時に、参照するartifactとversion、所有file、authorするfocused test、まだ満たしていない統合・live・実機・受け入れgateを記録する。部分成果を`[x]`にせず、タスク全体がチェック条件を満たした時点でcommit SHA、production scope、tests authored、`P0 none`、未実行gateを実装記録へ残す。
 - 並列実行が許可され利用可能な場合、親AIは競合しないレーンを空けたまま直列待機せず、安定した契約面を先に固定して複数のbounded taskを並行委譲する。各workerは原則1タスクID・1レーン・専用branch/worktreeを所有し、`project.pbxproj`、共有scheme、package lock、契約schema、root navigation、`task.md`の更新は単独integration ownerが直列に扱う。
 - 50mmマーカーのApple標準framework採用判断、live経路の成功、カメラ実機挙動、採寸精度、元RGB由来、privacy、明示承認、保存の最終gateは省略・緩和しない。並行化は着手と実装の待ち時間を減らすためのもので、fixtureをlive、Simulatorを実機、部分実装を最終受け入れとして扱うものではない。
 

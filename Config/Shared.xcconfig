@@ -1,0 +1,4 @@
+// This file intentionally contains only public routing values. API keys,
+// LiveKit API secrets, tokens, and private rembg addresses must never be added.
+TEAM_D_BACKEND_BASE_URL = https:/$()/backend.example.invalid
+TEAM_D_LIVEKIT_URL = wss:/$()/livekit.example.invalid

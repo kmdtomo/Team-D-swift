@@ -6,3 +6,8 @@ DerivedData/
 build/
 *.xcworkspace/xcuserdata/
 *.xcodeproj/xcuserdata/
+
+# Developer-only credentials and private endpoint overrides. The committed
+# Config templates must contain public values only.
+Config/Private.xcconfig
+Config/*.local.xcconfig

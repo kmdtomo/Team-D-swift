@@ -63,8 +63,8 @@ def check_plist(path: Path, value: object) -> None:
     """Reject secret/rembg-shaped plist fields, including nested dictionaries."""
     if isinstance(value, dict):
         for key, nested in value.items():
-            lowered = str(key).lower()
-            if any(marker in lowered for marker in ("apikey", "api_key", "secret", "token", "rembg")):
+            normalized_key = re.sub(r"[^a-z0-9]", "", str(key).lower())
+            if any(marker in normalized_key for marker in ("apikey", "secret", "token", "rembg")):
                 rendered = str(nested)
                 require(any(marker in rendered for marker in SAFE_SYNTHETIC), f"{path}: sensitive plist key {key}")
             check_plist(path, nested)
@@ -198,6 +198,11 @@ def check_product(product: Path, expected_mode: str | None = None) -> None:
     for path in product.rglob("*"):
         if not path.is_file():
             continue
+        if path.suffix == ".plist":
+            try:
+                check_plist(path, plistlib.loads(path.read_bytes()))
+            except plistlib.InvalidFileException:
+                pass
         check_content(path, scanned_file_content(path))
 
 

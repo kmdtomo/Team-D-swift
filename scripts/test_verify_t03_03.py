@@ -102,6 +102,20 @@ A000000000000000000000B3 /* Debug-Fixture */ = {isa = XCBuildConfiguration; base
         with self.assertRaises(SystemExit):
             verify.check_plist(Path("Info.plist"), {"api" + "Key": "unsafe-value"})
 
+    def test_rejects_embedded_binary_plist_key_variants(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            bundle = Path(temporary) / "TeamD.app"
+            resource = bundle / "Frameworks" / "Nested.framework" / "Config.plist"
+            resource.parent.mkdir(parents=True)
+            (bundle / "Info.plist").write_bytes(plistlib.dumps({
+                "TeamDMode": "fixture",
+                "TeamDBackendBaseURL": "https://backend.example.invalid",
+                "TeamDLiveKitURL": "wss://livekit.example.invalid",
+            }, fmt=plistlib.FMT_BINARY))
+            resource.write_bytes(plistlib.dumps({"api" + "-key": "unsafe-value"}, fmt=plistlib.FMT_BINARY))
+            with self.assertRaises(SystemExit):
+                verify.check_product(bundle, "fixture")
+
 
 if __name__ == "__main__":
     unittest.main()

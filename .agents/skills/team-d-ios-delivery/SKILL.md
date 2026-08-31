@@ -19,6 +19,17 @@ If the request would change user-visible behavior, API semantics, persistence, p
 
 Block the start of dependent implementation only for a concrete missing artifact or decision: unresolved wire or product meaning, unavailable shared protocol/schema, an active owner on the same file, or an unapproved irreversible technology gate. Device, credential, shared-backend, and live-environment availability normally block integration or acceptance, not fixture/mock implementation.
 
+## Respect independent AI task boundaries
+
+Treat every other Codex task, thread, chat, or session as an autonomous user-owned workflow, not as a child agent of the current task. This applies even when it uses the same repository, checkout, branch, task list, or product goal.
+
+- Use read-only Git/worktree status and task inspection only as needed to identify active ownership and avoid collisions. Do not treat another task's title, summary, plan, or progress as authorization to manage it.
+- Do not send another task instructions, status requests, stop requests, scope restrictions, priority changes, handoff conditions, or follow-up prompts. Do not wait on, interrupt, archive, hand off, or repurpose another task on the current task's initiative.
+- Manage only subagents spawned inside the current task. A peer Codex task remains independent even if its work would help the current task.
+- If another task owns or is editing the same files, shared project settings, branch, or worktree, change the current task's lane, use a separate worktree, choose a non-overlapping task, or report the conflict to the current user. Never resolve the conflict by directing the other task.
+- Cross-task communication or control is allowed only when the user explicitly requests it in the current task and identifies the intended coordination. Do not infer that permission from a general request to accelerate, parallelize, monitor, finish, or use subagents.
+- Integrate only committed artifacts that are ready under the repository's normal review rules. Do not ask another task to commit, stop, reorder, or prepare a handoff for this task.
+
 ## Implement within the lane
 
 - Keep one task ID and one lane per change when practical.

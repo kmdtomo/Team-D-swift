@@ -2,12 +2,27 @@ import ContractKit
 import DomainKit
 import Foundation
 
-/// The shared backend route is still unavailable in live mode. Contract
-/// fixtures may exercise the exact frozen request/response without becoming a
-/// hidden runtime fallback.
+/// Availability is explicit per build composition. Contract fixtures and the
+/// current live backend never substitute for one another after a failure.
 public enum ShotAssessmentServiceAvailability: Equatable, Sendable {
     case fixtureContract
+    case liveAvailable
     case liveUnavailable
+}
+
+/// Explicit compatibility boundary. The frozen Swift v1 contract remains
+/// reproducible, while the current shared backend is consumed without silently
+/// rewriting those historical schemas and goldens.
+public enum ShotAssessmentWireContract: Equatable, Sendable {
+    case frozenSwiftV1
+    case upstreamA25A854
+
+    fileprivate var imageField: String {
+        switch self {
+        case .frozenSwiftV1: "image"
+        case .upstreamA25A854: "file"
+        }
+    }
 }
 
 /// Camera and imported originals are sent without rendering, resizing, or
@@ -155,6 +170,7 @@ public actor ShotAssessmentClient: ShotAssessmentProviding {
     private let backend: BackendAPIClient
     private let transport: any ShotAssessmentTransport
     private let availability: ShotAssessmentServiceAvailability
+    private let wireContract: ShotAssessmentWireContract
     private let decoder: JSONDecoder
     private var generation: UInt64 = 0
     private var active: ActiveRequest?
@@ -164,11 +180,13 @@ public actor ShotAssessmentClient: ShotAssessmentProviding {
         backend: BackendAPIClient,
         transport: any ShotAssessmentTransport = URLSessionShotAssessmentTransport(),
         availability: ShotAssessmentServiceAvailability,
+        wireContract: ShotAssessmentWireContract = .frozenSwiftV1,
         decoder: JSONDecoder = .init()
     ) {
         self.backend = backend
         self.transport = transport
         self.availability = availability
+        self.wireContract = wireContract
         self.decoder = decoder
         stateStorage = .idle(availability)
     }
@@ -182,7 +200,7 @@ public actor ShotAssessmentClient: ShotAssessmentProviding {
         let operationGeneration = generation
         let descriptor = ShotAssessmentRequestDescriptor(operation: operation)
 
-        guard availability == .fixtureContract else {
+        guard availability != .liveUnavailable else {
             let failure = ShotAssessmentFailure(
                 descriptor: descriptor,
                 reason: .liveEndpointUnavailable
@@ -235,6 +253,7 @@ public actor ShotAssessmentClient: ShotAssessmentProviding {
         let backend = backend
         let transport = transport
         let decoder = decoder
+        let wireContract = wireContract
         return Task {
             do {
                 let request = try await backend.plannedAnalyzeRequest(
@@ -242,7 +261,8 @@ public actor ShotAssessmentClient: ShotAssessmentProviding {
                     data: operation.originalImage,
                     type: operation.imageContentType,
                     boundary: operation.boundary,
-                    key: operation.idempotencyKey
+                    key: operation.idempotencyKey,
+                    imageField: wireContract.imageField
                 )
                 try Task.checkCancellation()
                 let (data, response) = try await transport.data(for: request)
@@ -251,7 +271,8 @@ public actor ShotAssessmentClient: ShotAssessmentProviding {
                     data: data,
                     response: response,
                     descriptor: descriptor,
-                    decoder: decoder
+                    decoder: decoder,
+                    wireContract: wireContract
                 )
             } catch is CancellationError {
                 return .failed(.init(descriptor: descriptor, reason: .cancelled))
@@ -268,7 +289,8 @@ public actor ShotAssessmentClient: ShotAssessmentProviding {
         data: Data,
         response: URLResponse,
         descriptor: ShotAssessmentRequestDescriptor,
-        decoder: JSONDecoder
+        decoder: JSONDecoder,
+        wireContract: ShotAssessmentWireContract
     ) -> ShotAssessmentOutcome {
         guard let http = response as? HTTPURLResponse else {
             return .failed(.init(descriptor: descriptor, reason: .invalidResponse))
@@ -283,7 +305,11 @@ public actor ShotAssessmentClient: ShotAssessmentProviding {
                     reason: .unexpectedStatus(http.statusCode)
                 ))
             }
-            guard let error = try? decoder.decode(ProviderError.self, from: data),
+            guard let error = decodeProviderError(
+                data,
+                decoder: decoder,
+                wireContract: wireContract
+            ),
                   error.provider == .shotAssessor else {
                 return .failed(.init(descriptor: descriptor, reason: .invalidResponse))
             }
@@ -301,8 +327,38 @@ public actor ShotAssessmentClient: ShotAssessmentProviding {
     }
 
     private nonisolated static let providerErrorStatusCodes: Set<Int> = [
-        400, 415, 422, 429, 502, 503, 504,
+        400, 413, 415, 422, 429, 502, 503, 504,
     ]
+
+    private struct UpstreamProviderErrorEnvelope: Decodable {
+        let detail: ProviderError
+
+        private enum CodingKeys: String, CodingKey { case detail }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            guard Set(container.allKeys) == [.detail] else {
+                throw DecodingError.dataCorrupted(.init(
+                    codingPath: decoder.codingPath,
+                    debugDescription: "provider error envelope contains unknown fields"
+                ))
+            }
+            detail = try container.decode(ProviderError.self, forKey: .detail)
+        }
+    }
+
+    private nonisolated static func decodeProviderError(
+        _ data: Data,
+        decoder: JSONDecoder,
+        wireContract: ShotAssessmentWireContract
+    ) -> ProviderError? {
+        switch wireContract {
+        case .frozenSwiftV1:
+            try? decoder.decode(ProviderError.self, from: data)
+        case .upstreamA25A854:
+            try? decoder.decode(UpstreamProviderErrorEnvelope.self, from: data).detail
+        }
+    }
 
     private nonisolated static func isJSON(_ contentType: String?) -> Bool {
         contentType?.lowercased().split(separator: ";").first == "application/json"

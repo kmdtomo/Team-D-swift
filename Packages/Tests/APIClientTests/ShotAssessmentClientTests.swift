@@ -143,6 +143,49 @@ struct ShotAssessmentClientTests {
         #expect(requests[0].httpBody == requests[1].httpBody)
     }
 
+    @Test func currentUpstreamWireUsesFilePartAndStrictDetailErrorEnvelope() async throws {
+        let providerEnvelope = #"{"detail":{"provider":"shot-assessor","code":"UNAVAILABLE","message":"provider unavailable","retryable":true}}"#
+        let invalidEnvelope = #"{"detail":{"provider":"shot-assessor","code":"UNAVAILABLE","message":"provider unavailable","retryable":true},"extra":true}"#
+        let transport = RecordingShotAssessmentTransport([
+            .success((validAssessment(shot: .front), response(url: backendURL, status: 200))),
+            .success((Data(providerEnvelope.utf8), response(url: backendURL, status: 413))),
+            .success((Data(invalidEnvelope.utf8), response(url: backendURL, status: 503))),
+        ])
+        let client = try makeClient(
+            transport: transport,
+            availability: .liveAvailable,
+            wireContract: .upstreamA25A854
+        )
+
+        guard case .assessment = await client.assess(
+            try makeOperation(suffix: "upstream-success")
+        ) else {
+            Issue.record("current upstream success was rejected")
+            return
+        }
+        let requests = await transport.requests
+        let request = try #require(requests.first)
+        #expect(request.httpBody?.range(of: Data("name=\"file\"".utf8)) != nil)
+        #expect(request.httpBody?.range(of: Data("name=\"image\"".utf8)) == nil)
+
+        guard case .failed(let failure) = await client.assess(
+            try makeOperation(suffix: "upstream-error")
+        ), case .provider(let provider) = failure.reason else {
+            Issue.record("current upstream provider envelope was not preserved")
+            return
+        }
+        #expect(provider.provider == .shotAssessor)
+        #expect(provider.retryable)
+
+        guard case .failed(let invalid) = await client.assess(
+            try makeOperation(suffix: "upstream-invalid-error")
+        ) else {
+            Issue.record("invalid current upstream envelope was accepted")
+            return
+        }
+        #expect(invalid.reason == .invalidResponse)
+    }
+
     @Test func acceptsStrictRetryAssessmentButRejectsContradictoryOKShot() async throws {
         let retry = #"{"shotType":"back","quality":"retry","issues":["WRONG_SHOT"],"missingShots":["front","tag"],"nextAction":"RETAKE"}"#
         let mismatchOK = #"{"shotType":"back","quality":"ok","issues":[],"missingShots":["tag"],"nextAction":"REQUEST_NEXT"}"#
@@ -349,7 +392,8 @@ private let backendURL = URL(string: "http://assessment.example.test/api/analyze
 
 private func makeClient(
     transport: any ShotAssessmentTransport,
-    availability: ShotAssessmentServiceAvailability = .fixtureContract
+    availability: ShotAssessmentServiceAvailability = .fixtureContract,
+    wireContract: ShotAssessmentWireContract = .frozenSwiftV1
 ) throws -> ShotAssessmentClient {
     let configuration = URLSessionConfiguration.ephemeral
     configuration.urlCache = nil
@@ -360,7 +404,8 @@ private func makeClient(
             allowsInsecureTestURL: true
         ),
         transport: transport,
-        availability: availability
+        availability: availability,
+        wireContract: wireContract
     )
 }
 

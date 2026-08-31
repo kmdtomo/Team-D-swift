@@ -1,0 +1,201 @@
+import Foundation
+import Testing
+@testable import DomainKit
+
+@Test func protectedTemporaryStoreStoresLoadsAndDiscardsOneHandle() async throws {
+    let fixture = try TemporaryStoreFixture()
+    let store = try fixture.makeStore()
+    let handle = try fixture.handle(session: "session-secret", lifecycle: 1, request: "request-secret", image: "image-secret", version: 1)
+
+    try await store.store(Data([1, 2, 3]), handle: handle)
+    #expect(await store.load(handle: handle) == Data([1, 2, 3]))
+    try await store.store(Data([4, 5, 6]), handle: handle)
+    #expect(await store.load(handle: handle) == Data([4, 5, 6]))
+    await store.discard(handle: handle)
+    #expect(await store.load(handle: handle) == nil)
+    #expect(fixture.ownedContents().isEmpty)
+    #expect(fixture.callerMarkerExists)
+}
+
+@Test func protectedTemporaryStoreDiscardsOnlyExactLifecycleNamespace() async throws {
+    let fixture = try TemporaryStoreFixture()
+    let store = try fixture.makeStore()
+    let first = try fixture.handle(session: "same-session", lifecycle: 1, request: "old-request", image: "old-image", version: 1)
+    let second = try fixture.handle(session: "same-session", lifecycle: 2, request: "new-request", image: "new-image", version: 2)
+
+    try await store.store(Data([1]), handle: first)
+    try await store.store(Data([2]), handle: second)
+    await store.discardAll(namespace: first.namespace)
+
+    #expect(await store.load(handle: first) == nil)
+    #expect(await store.load(handle: second) == Data([2]))
+    #expect(fixture.callerMarkerExists)
+}
+
+@Test func protectedTemporaryStoreRecoversAnOrphanedOwnedChildAtStartup() throws {
+    let fixture = try TemporaryStoreFixture()
+    try fixture.createOrphanedOwnedFile()
+
+    let store = try fixture.makeStore()
+
+    #expect(fixture.ownedDirectoryExists)
+    #expect(fixture.ownedContents().isEmpty)
+    #expect(fixture.callerMarkerExists)
+    withExtendedLifetime(store) {}
+}
+
+@Test func protectedTemporaryStoreExplicitCleanupRemovesOnlyOwnedChild() async throws {
+    let fixture = try TemporaryStoreFixture()
+    let store = try fixture.makeStore()
+    let handle = try fixture.handle(session: "end", lifecycle: 1, request: "request", image: "image", version: 1)
+    try await store.store(Data([7]), handle: handle)
+
+    await store.cleanup()
+
+    #expect(!fixture.ownedDirectoryExists)
+    #expect(fixture.callerMarkerExists)
+    await #expect(throws: ProtectedTemporarySessionImageBackingStoreError.cleanedUp) {
+        try await store.store(Data([8]), handle: handle)
+    }
+}
+
+@Test func protectedTemporaryStoreDeinitRemovesOnlyOwnedChild() async throws {
+    let fixture = try TemporaryStoreFixture()
+    let handle = try fixture.handle(session: "deinit", lifecycle: 1, request: "request", image: "image", version: 1)
+    weak var weakStore: ProtectedTemporarySessionImageBackingStore?
+    do {
+        let store = try fixture.makeStore()
+        weakStore = store
+        try await store.store(Data([5]), handle: handle)
+    }
+
+    #expect(weakStore == nil)
+    #expect(!fixture.ownedDirectoryExists)
+    #expect(fixture.callerMarkerExists)
+}
+
+@Test func protectedTemporaryStoreHasProtectionAndBackupPolicy() async throws {
+    let fixture = try TemporaryStoreFixture()
+    let store = try fixture.makeStore()
+    let handle = try fixture.handle(session: "policy", lifecycle: 1, request: "request", image: "image", version: 1)
+    try await store.store(Data([1]), handle: handle)
+
+    #expect(store.policy == .protectedTemporaryFiles)
+    #expect(store.fileProtectionPolicy == .completeUntilFirstUserAuthentication)
+    #expect(store.excludesFromBackup)
+    #expect(try fixture.ownedDirectoryURL.resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup == true)
+    #expect(try fixture.fileURL(lifecycle: 1, operation: 1).resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup == true)
+}
+
+@Test func protectedTemporaryStoreNeverPlacesRawIdentifiersInRelativeFilenames() async throws {
+    let fixture = try TemporaryStoreFixture()
+    let store = try fixture.makeStore()
+    let sessionSecret = "session-secret-DO-NOT-LEAK"
+    let requestSecret = "request-secret-DO-NOT-LEAK"
+    let imageSecret = "image-secret-DO-NOT-LEAK"
+    let handle = try fixture.handle(session: sessionSecret, lifecycle: 87, request: requestSecret, image: imageSecret, version: 99)
+
+    try await store.store(Data([4]), handle: handle)
+    let names = fixture.ownedContents().map(\.lastPathComponent)
+
+    #expect(names == ["artifact-l87-o99.bin"])
+    for name in names {
+        #expect(!name.contains(sessionSecret))
+        #expect(!name.contains(requestSecret))
+        #expect(!name.contains(imageSecret))
+    }
+}
+
+@Test func protectedTemporaryStoreRejectsUnsafeContainersWithoutDeletingThem() throws {
+    let manager = FileManager.default
+    let temporaryRoot = manager.temporaryDirectory
+    let fixture = try TemporaryStoreFixture()
+    let outside = URL(fileURLWithPath: "/Users", isDirectory: true)
+
+    for candidate in [URL(fileURLWithPath: "/", isDirectory: true), temporaryRoot, outside] {
+        #expect(throws: ProtectedTemporarySessionImageBackingStoreError.unsafeContainer) {
+            try ProtectedTemporarySessionImageBackingStore(temporaryContainerURL: candidate)
+        }
+    }
+    #expect(fixture.callerMarkerExists)
+}
+
+@Test func protectedTemporaryStoreRejectsUnsafeFilenamesAndPreservesCallerContainer() async throws {
+    let fixture = try TemporaryStoreFixture()
+    let handle = try fixture.handle(session: "filename", lifecycle: 1, request: "request", image: "image", version: 1)
+
+    for name in ["", "/absolute.bin", "../escape.bin", "folder/file.bin", "folder\\file.bin"] {
+        let store = try fixture.makeStore(filenameStrategy: FixedFilenameStrategy(name))
+        await #expect(throws: ProtectedTemporarySessionImageBackingStoreError.unsafeFilename) {
+            try await store.store(Data([1]), handle: handle)
+        }
+        #expect(fixture.callerMarkerExists)
+    }
+}
+
+@Test func protectedTemporaryStoreRejectsFilenameCollisionWithoutOverwriting() async throws {
+    let fixture = try TemporaryStoreFixture()
+    let store = try fixture.makeStore(filenameStrategy: FixedFilenameStrategy("same.bin"))
+    let first = try fixture.handle(session: "collision", lifecycle: 1, request: "first", image: "first", version: 1)
+    let second = try fixture.handle(session: "collision", lifecycle: 1, request: "second", image: "second", version: 2)
+
+    try await store.store(Data([1]), handle: first)
+    await #expect(throws: ProtectedTemporarySessionImageBackingStoreError.filenameCollision) {
+        try await store.store(Data([2]), handle: second)
+    }
+
+    #expect(await store.load(handle: first) == Data([1]))
+    #expect(await store.load(handle: second) == nil)
+    #expect(fixture.callerMarkerExists)
+}
+
+private struct FixedFilenameStrategy: ProtectedTemporarySessionFilenameStrategy {
+    let value: String
+    init(_ value: String) { self.value = value }
+    func filename(lifecycleGeneration: UInt64, operationVersion: UInt64) -> String { value }
+}
+
+private final class TemporaryStoreFixture {
+    private let fileManager = FileManager.default
+    let containerURL: URL
+    private let callerMarkerURL: URL
+
+    init() throws {
+        containerURL = fileManager.temporaryDirectory.appendingPathComponent("team-d-protected-store-test-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.createDirectory(at: containerURL, withIntermediateDirectories: false)
+        callerMarkerURL = containerURL.appendingPathComponent("caller-owned-marker")
+        try Data([0]).write(to: callerMarkerURL)
+    }
+
+    deinit { try? fileManager.removeItem(at: containerURL) }
+
+    var ownedDirectoryURL: URL {
+        containerURL.appendingPathComponent(ProtectedTemporarySessionImageBackingStore.ownedDirectoryName, isDirectory: true)
+    }
+
+    var ownedDirectoryExists: Bool { fileManager.fileExists(atPath: ownedDirectoryURL.path) }
+    var callerMarkerExists: Bool { fileManager.fileExists(atPath: callerMarkerURL.path) }
+
+    func makeStore(filenameStrategy: any ProtectedTemporarySessionFilenameStrategy = NumericSessionImageFilenameStrategy()) throws -> ProtectedTemporarySessionImageBackingStore {
+        try ProtectedTemporarySessionImageBackingStore(temporaryContainerURL: containerURL, filenameStrategy: filenameStrategy)
+    }
+
+    func createOrphanedOwnedFile() throws {
+        try fileManager.createDirectory(at: ownedDirectoryURL, withIntermediateDirectories: false)
+        try Data([9]).write(to: ownedDirectoryURL.appendingPathComponent("orphan.bin"))
+    }
+
+    func ownedContents() -> [URL] {
+        (try? fileManager.contentsOfDirectory(at: ownedDirectoryURL, includingPropertiesForKeys: nil))?.sorted { $0.lastPathComponent < $1.lastPathComponent } ?? []
+    }
+
+    func fileURL(lifecycle: UInt64, operation: UInt64) -> URL {
+        ownedDirectoryURL.appendingPathComponent("artifact-l\(lifecycle)-o\(operation).bin")
+    }
+
+    func handle(session: String, lifecycle: UInt64, request: String, image: String, version: UInt64) throws -> SessionImageHandle {
+        let namespace = SessionStorageNamespace(sessionID: try SessionID(session), lifecycleGeneration: lifecycle)
+        let token = SessionOperationToken(namespace: namespace, requestID: try RequestID(request), scope: .capture(.front), version: version)
+        return SessionImageHandle(imageID: try ImageID(image), token: token)
+    }
+}

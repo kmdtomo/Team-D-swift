@@ -265,7 +265,7 @@
 
 ## 4. 型安全な撮影状態遷移
 
-- [ ] **T04-01 enum中心の状態機械と遷移表を定義する**
+- [x] **T04-01 enum中心の状態機械と遷移表を定義する**
   - 担当する責務: レーンAが、AI自由文とUIの偶発状態から画面遷移を切り離す。
   - 依存する先行タスク: T03-01。
   - 実装対象: `capture(shot)`, `analyzingShot`, `measurementPrep`, `validatingMeasurement`, `measurementReview`, `readyToEdit`, `processingEdit`, `preview`, `approval`, `done`等のassociated-value enum、event、guard、pure transition function。LiveKitの`connecting/reconnecting`はこの撮影phaseへ含めない。
@@ -273,6 +273,16 @@
   - 自動テスト方法: 全state×eventのtable test、到達可能性test、illegal transition、retake時の他slot保持、4枚未満/未承認でedit不可を検証する。
   - 実機確認が必要か: 不要。
   - fixture / live: fixture。
+
+### T04-01 検証記録（2026-08-31）
+
+- Verification (2026-08-31):
+  - commit/build: `be566df feat: add capture workflow state machine`; clean clone `/tmp/teamd-t04-clean.LkLnXL/repo`; Xcode 26.2 (17C52), Swift 6.2.3 compiler / Swift 6 language mode, iPhone 16 Pro Simulator (iOS 18.5, arm64)
+  - automated tests: from the clean clone, `swift test --package-path Packages --scratch-path /tmp/teamd-t04-clean.LkLnXL/swift --filter DomainKitTests` passed 9/9; `swift test --package-path Packages --scratch-path /tmp/teamd-t04-clean.LkLnXL/swift` passed 27/27; `swift build --package-path Packages --scratch-path /tmp/teamd-t04-clean.LkLnXL/swift`; `./scripts/docs_smoke_fixture.sh` passed (UI 1/1, `TEST SUCCEEDED`, 3 known AppIntents warnings / 0 unexpected, status unchanged); package graph and T01 lints; `git diff --check` all passed
+  - fixture: the table-driven reducer suite covers every associated capture/analyzing phase and all remaining phases against every representative event; canonical reachability, fixed order, illegal transitions, retake preservation, CV/manual approval, measurement revalidation, four-slot edit gate, and AI/connection-input exclusion passed deterministically
+  - live: not required
+  - device: not required
+  - limitations: none within T04-01; session artifact ownership and stale-result cleanup remain T04-02, and LiveKit connection/guidance filtering remains T04-03
 
 - [ ] **T04-02 セッション内storeと終了時破棄を定義する**
   - 担当する責務: レーンAが、画像・判定・採寸・中間生成物の所有権と寿命を一元管理する。

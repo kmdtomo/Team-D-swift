@@ -149,7 +149,6 @@ public struct CaptureRecoveryView: View {
     private let onRetryCamera: @Sendable () async -> Void
     private let onResumeCamera: @Sendable () async -> Void
     private let onImport: @Sendable (any CaptureImporting, Shot) async -> Void
-    private let onCancelImport: @Sendable (Shot) async -> Void
     private let onImportFailure: @Sendable (Shot) async -> Void
 
     @Environment(\.openURL) private var openURL
@@ -162,7 +161,6 @@ public struct CaptureRecoveryView: View {
         onRetryCamera: @escaping @Sendable () async -> Void,
         onResumeCamera: @escaping @Sendable () async -> Void,
         onImport: @escaping @Sendable (any CaptureImporting, Shot) async -> Void,
-        onCancelImport: @escaping @Sendable (Shot) async -> Void,
         onImportFailure: @escaping @Sendable (Shot) async -> Void
     ) {
         self.presentation = presentation
@@ -170,7 +168,6 @@ public struct CaptureRecoveryView: View {
         self.onRetryCamera = onRetryCamera
         self.onResumeCamera = onResumeCamera
         self.onImport = onImport
-        self.onCancelImport = onCancelImport
         self.onImportFailure = onImportFailure
     }
 
@@ -218,15 +215,12 @@ public struct CaptureRecoveryView: View {
             }) else { return }
             switch result {
             case .success(let urls):
-                guard let url = urls.first else {
-                    Task { await onCancelImport(shot) }
-                    return
-                }
+                guard let url = urls.first else { return }
                 Task { await onImport(FileOriginalImageImporter(fileURL: url), shot) }
             case .failure(let error):
                 let cocoaError = error as NSError
                 if cocoaError.domain == NSCocoaErrorDomain, cocoaError.code == NSUserCancelledError {
-                    Task { await onCancelImport(shot) }
+                    return
                 } else {
                     Task { await onImportFailure(shot) }
                 }

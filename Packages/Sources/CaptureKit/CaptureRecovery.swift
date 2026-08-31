@@ -166,6 +166,7 @@ public actor CaptureRecoveryController {
     private var permissionVersion: UInt64 = 0
     private var recoveryVersion: UInt64 = 0
     private var importVersion: UInt64 = 0
+    private var importReturnState: CaptureRecoveryState?
 
     public init(
         authorization: any CaptureAuthorizing,
@@ -181,7 +182,13 @@ public actor CaptureRecoveryController {
 
     public var state: CaptureRecoveryState { stateStorage }
     public func presentation(for shot: Shot) -> CaptureRecoveryPresentation {
-        CaptureRecoveryCopy.presentation(for: stateStorage, shot: shot)
+        let base = CaptureRecoveryCopy.presentation(for: stateStorage, shot: shot)
+        guard isImportFailureOrCancellation(stateStorage), let importReturnState else { return base }
+        let returnPresentation = CaptureRecoveryCopy.presentation(for: importReturnState, shot: shot)
+        let actions = (returnPresentation.actions + base.actions).reduce(into: [CaptureRecoveryAction]()) { result, action in
+            if !result.contains(action) { result.append(action) }
+        }
+        return .init(state: base.state, actions: actions, instruction: base.instruction)
     }
     public func preservedAcceptedSlots() async -> Set<Shot> { await session.acceptedSlots() }
 
@@ -193,6 +200,7 @@ public actor CaptureRecoveryController {
     }
 
     public func requestPermission() async {
+        importReturnState = nil
         let version = nextPermissionVersion()
         stateStorage = .permission(.requesting)
         let status = await authorization.requestAccess()
@@ -207,16 +215,19 @@ public actor CaptureRecoveryController {
             invalidatePermission()
             invalidateRecovery()
             _ = nextImportVersion()
+            importReturnState = nil
             stateStorage = .interrupted
         case .runtimeError:
             invalidatePermission()
             invalidateRecovery()
             _ = nextImportVersion()
+            importReturnState = nil
             stateStorage = .runtimeError
         case .enteredBackground:
             invalidatePermission()
             invalidateRecovery()
             _ = nextImportVersion()
+            importReturnState = nil
             stateStorage = .inBackground
         case .enteredForeground:
             guard stateStorage == .inBackground else { return false }
@@ -241,10 +252,12 @@ public actor CaptureRecoveryController {
     /// an ended flow cannot affect its replacement.
     public func recoverCamera() async throws {
         guard let sessionID = await session.activeSessionID() else {
+            importReturnState = nil
             stateStorage = .staleSession
             throw CaptureRecoveryError.noActiveSession
         }
         _ = nextImportVersion()
+        importReturnState = nil
         let version = nextRecoveryVersion()
         stateStorage = .resuming
         do {
@@ -292,10 +305,15 @@ public actor CaptureRecoveryController {
     /// A selection belonging to an ended/replaced session is never submitted.
     public func importPhoto(_ importer: any CaptureImporting, for shot: Shot) async throws {
         guard let sessionID = await session.activeSessionID() else {
+            importReturnState = nil
             stateStorage = .staleSession
             throw CaptureRecoveryError.noActiveSession
         }
+        invalidatePermission()
         invalidateRecovery()
+        if !isImportFailureOrCancellation(stateStorage) {
+            importReturnState = stateStorage
+        }
         let version = nextImportVersion()
         stateStorage = .importing(shot)
         do {
@@ -303,6 +321,7 @@ public actor CaptureRecoveryController {
             try Task.checkCancellation()
             try requireCurrentImport(version)
             guard await session.activeSessionID() == sessionID else {
+                importReturnState = nil
                 stateStorage = .staleSession
                 throw CaptureRecoveryError.staleSession
             }
@@ -315,6 +334,7 @@ public actor CaptureRecoveryController {
             try Task.checkCancellation()
             try requireCurrentImport(version)
             guard await session.activeSessionID() == sessionID else {
+                importReturnState = nil
                 stateStorage = .staleSession
                 throw CaptureRecoveryError.staleSession
             }
@@ -323,6 +343,7 @@ public actor CaptureRecoveryController {
             let status = await authorization.status()
             try requireCurrentImport(version)
             guard await session.activeSessionID() == sessionID else {
+                importReturnState = nil
                 stateStorage = .staleSession
                 throw CaptureRecoveryError.staleSession
             }
@@ -341,16 +362,21 @@ public actor CaptureRecoveryController {
     /// Invalidates an in-flight loader without waiting for a provider callback.
     /// Its eventual result is discarded before the shared slot submitter.
     public func cancelImport(for shot: Shot) {
+        guard stateStorage == .importing(shot) else { return }
         _ = nextImportVersion()
         stateStorage = .importCancelled(shot)
     }
 
     public func recordImportFailure(for shot: Shot) {
+        if !isImportFailureOrCancellation(stateStorage), stateStorage != .importing(shot) {
+            importReturnState = stateStorage
+        }
         _ = nextImportVersion()
         stateStorage = .importFailed(shot)
     }
 
     private func apply(_ authorization: CaptureAuthorization) {
+        importReturnState = nil
         switch authorization {
         case .notDetermined: stateStorage = .permission(.notDetermined)
         case .authorized: stateStorage = .cameraReady
@@ -383,6 +409,13 @@ public actor CaptureRecoveryController {
 
     private func requireCurrentImport(_ version: UInt64) throws {
         guard version == importVersion else { throw CaptureRecoveryError.staleImport }
+    }
+
+    private func isImportFailureOrCancellation(_ state: CaptureRecoveryState) -> Bool {
+        switch state {
+        case .importCancelled, .importFailed: true
+        default: false
+        }
     }
 }
 

@@ -29,6 +29,27 @@ public struct AppleImageCompositionInput: @unchecked Sendable {
     }
 }
 
+/// Apple image input for a background-independent transparent cutout. EXIF
+/// orientation remains explicit because `CGImage` does not retain it.
+public struct AppleTransparentCutoutInput: @unchecked Sendable {
+    public let front: CGImage
+    public let frontOrientation: RasterOrientation
+    public let mask: CGImage
+    public let maskOrientation: RasterOrientation
+
+    public init(
+        front: CGImage,
+        frontOrientation: RasterOrientation = .up,
+        mask: CGImage,
+        maskOrientation: RasterOrientation = .up
+    ) {
+        self.front = front
+        self.frontOrientation = frontOrientation
+        self.mask = mask
+        self.maskOrientation = maskOrientation
+    }
+}
+
 /// Converts Apple image types at one strict boundary, then delegates all blend
 /// and crop math to `FrontImageCompositor`. It never draws, fills, or retouches
 /// foreground pixels: the core's only foreground input is `front`.
@@ -50,7 +71,7 @@ public enum AppleImageCompositor {
             cancellationProbe: cancellationProbe
         )
         try checkCancellation(cancellationProbe)
-        return try makeSRGBImage(from: raster)
+        return try makeSRGBImage(from: raster, alphaInfo: .noneSkipLast)
     }
 
     /// Preview and final output intentionally share the exact lossless render
@@ -69,6 +90,34 @@ public enum AppleImageCompositor {
         cancellationProbe: @escaping CompositionCancellationProbe = { Task<Never, Never>.isCancelled }
     ) throws -> CGImage {
         try compose(input, cancellationProbe: cancellationProbe)
+    }
+
+    /// Returns a straight-alpha sRGB image suitable for the non-approvable
+    /// transparent preview. The adapter normalizes orientation and color space,
+    /// then preserves every normalized front RGB byte while using only mask
+    /// coverage for alpha. No background generation is involved.
+    @available(macOS 10.15, iOS 13, *)
+    public static func renderTransparentCutout(
+        _ input: AppleTransparentCutoutInput,
+        cancellationProbe: @escaping CompositionCancellationProbe = { Task<Never, Never>.isCancelled }
+    ) throws -> CGImage {
+        try checkCancellation(cancellationProbe)
+        let front = try decodeRGBA(
+            input.front,
+            orientation: input.frontOrientation,
+            cancellationProbe: cancellationProbe
+        )
+        let mask = try decodeMask(
+            input.mask,
+            orientation: input.maskOrientation,
+            cancellationProbe: cancellationProbe
+        )
+        let raster = try FrontImageCompositor.makeTransparentCutout(
+            .init(front: front, mask: mask),
+            cancellationProbe: cancellationProbe
+        )
+        try checkCancellation(cancellationProbe)
+        return try makeSRGBImage(from: raster, alphaInfo: .last)
     }
 
     private static func decodeRGBA(
@@ -133,7 +182,10 @@ public enum AppleImageCompositor {
         return bytes
     }
 
-    private static func makeSRGBImage(from raster: RGBA8Raster) throws -> CGImage {
+    private static func makeSRGBImage(
+        from raster: RGBA8Raster,
+        alphaInfo: CGImageAlphaInfo
+    ) throws -> CGImage {
         let expected = try expectedByteCount(width: raster.width, height: raster.height, channels: 4, error: .invalidRGBAByteCount)
         guard raster.pixels.count == expected,
               let provider = CGDataProvider(data: Data(raster.pixels) as CFData),
@@ -147,7 +199,7 @@ public enum AppleImageCompositor {
             bitsPerPixel: 32,
             bytesPerRow: raster.width * 4,
             space: colorSpace,
-            bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.noneSkipLast.rawValue),
+            bitmapInfo: CGBitmapInfo(rawValue: alphaInfo.rawValue),
             provider: provider,
             decode: nil,
             shouldInterpolate: false,

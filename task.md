@@ -83,9 +83,10 @@
 | `accepted` | 全完了条件と必要なfixture/live/実機証跡が揃った | `[x]` |
 | `blocked` | 欠けている具体的成果物、owner、解除条件を記録済み | `[ ]` |
 
-- 各並列sliceは開始時にtask ID・lane・参照artifact/version・所有file・focused test・未統合gateを明示する。各production変更では対象targetをbuildし、変更箇所を直接検証する最小のunit/contract/snapshot testを同じ変更で通す。
-- 影響packageの全suiteは複数タスクを統合するwaveごと、全XCUITestは動作可能な縦スライスまたはT17/T19、clean clone・長時間性能・実機matrix・live end-to-endは該当Milestoneと最終受け入れで実行する。
-- 同じ未変更範囲への全suite、全XCUITest、clean clone、長時間実機試験を各小タスク・各commitで繰り返さない。契約、共有project設定、依存version、状態遷移、画像処理式を変更した場合は、影響する層だけ前倒しして広げる。
+- 各並列sliceは開始時にtask ID・lane・参照artifact/version・所有file・最後に実行するauthoritative verification command・未統合gateを明示する。コードとfocused testをすべて書き終えた候補SHAに対し、task ownerが最後にそのcommandを1回だけ実行し、成功したら`implementation_ready`とする。
+- 実装途中の小編集、subcommit、review指摘ごとに成功buildを挟まない。失敗runは原因となるcode/config/test変更後だけ再実行する。同じ候補SHAの成功結果は親AI・監査AI・integration ownerが再利用し、別scratchで再buildしない。再実行する場合は、SHA/依存/project/contract/testの変更または証跡不備という具体的理由を記録する。
+- 影響packageの全suiteとapp integration buildは複数タスクを統合するwaveごとに1回、全XCUITestは動作可能な縦スライスまたはT17/T19、clean clone・長時間性能・実機matrix・live end-to-endは該当Milestoneと最終受け入れで実行する。
+- 重い`xcodebuild`、全package `swift test`、clean build、XCUITestはrepository全体で同時に1件だけ実行する。各taskはscratch/DerivedData pathを1つだけ再利用し、authoritative result記録後に再生成可能なscratchを削除する。同じ未変更範囲へ複数workerがscratchを分けて重複検証しない。
 - 並列workerは原則1タスクID・1レーン・専用branch/worktreeを使い、production変更とfocused testを1〜2個の意味あるcommit（必要時のみ最大3個）にまとめる。workerは`task.md`や共有project fileを更新せず、integration ownerが競合確認、wave test、証跡、checkboxを直列に統合する。
 
 ## 1. 既存資産の棚卸しと移行境界

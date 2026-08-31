@@ -10,7 +10,7 @@ Advance the Swift client in small, verifiable task units without confusing parti
 ## Start a work unit
 
 1. Read root `AGENTS.md`, `requirements.md`, and the relevant `task.md` section.
-2. Name the task ID, lane, dependencies, implementation target, required test mode, and device gate. Record the upstream artifact/version being used, owned files, and any integration, live, device, or acceptance gates intentionally left open.
+2. Name the task ID, lane, dependencies, implementation target, required test mode, and device gate. Record the upstream artifact/version being used, owned files, the single final authoritative verification command, and any integration, live, device, or acceptance gates intentionally left open.
 3. Classify each predecessor as a start, integration, or acceptance dependency. An unchecked predecessor is not itself a start blocker: continue separable work when the required contract, protocol, finite type, fixture, golden payload, fake, expected image, or approved technical decision is stable. Run the T11 Apple-framework measurement M0 early, while keeping its physical-corpus evidence mandatory for the adoption decision.
 4. Inspect the current worktree and preserve user or parallel-agent changes.
 5. Identify the smallest production change and its focused automated evidence before editing.
@@ -31,7 +31,7 @@ Block the start of dependent implementation only for a concrete missing artifact
 
 ## Verify in layers
 
-Run the least expensive meaningful layer first, then broaden according to risk and the integration cadence:
+Select the least expensive meaningful layer for the task, then broaden only at the integration cadence:
 
 1. Swift Testing/XCTest for domain state, codecs, geometry, image math, cancellation, and failure behavior.
 2. Contract/golden tests for API and fixture changes.
@@ -39,7 +39,11 @@ Run the least expensive meaningful layer first, then broaden according to risk a
 4. XCUITest for user-visible flow, recovery, and approval.
 5. Physical-device checks required by the task.
 
-Build the affected target and run focused tests with each production change. Run affected package/app suites once per integration wave, full XCUITest at runnable vertical slices or T17/T19, and clean-clone, long performance, device-matrix, and live end-to-end checks at their named milestones or after a broad shared change invalidates prior evidence. Do not repeat unchanged heavy layers for every small task or commit.
+Write focused tests during implementation without running a successful build after every small edit, subcommit, or review comment. When the task's code and focused tests are complete, the task owner runs one authoritative verification command against the final candidate SHA. That one invocation includes the affected target build and focused tests; if multiple task-required configurations exist, run them sequentially inside the same invocation.
+
+If the authoritative run fails, rerun only after changing the responsible code, configuration, or test. Record the successful candidate SHA, resolved dependencies, Xcode/Swift version, command, and result. Parent and review agents inspect the diff and this evidence; they do not rerun the same SHA in another scratch path. Rerun only when the SHA, dependency resolution, shared project setting, contract, or test changed, evidence is missing/corrupt, or a concrete reproducibility concern is recorded.
+
+Run affected package/app suites and the app integration build once per integration wave, full XCUITest at runnable vertical slices or T17/T19, and clean-clone, long performance, device-matrix, and live end-to-end checks at their named milestones. Heavy commands (`xcodebuild`, full-package `swift test`, clean builds, XCUITest) are repository-wide single-flight. Each task owns and reuses one scratch/DerivedData path and removes regenerable scratch after recording its authoritative result.
 
 Fixture and live are independent results. A fake camera or mock Room cannot satisfy physical capture or live publish. A Simulator pass cannot satisfy camera, orientation, interruption, thermal, measurement accuracy, VoiceOver camera operation, or export gates.
 

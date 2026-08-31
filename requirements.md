@@ -198,8 +198,11 @@
 ### NFR-3. テストと証跡
 
 - domain/geometry/codecはSwift TestingまたはXCTest、統合はXCTest、主要ユーザーフローはXCUITestで検証する。
-- 各production変更では、対象targetのbuildと、その変更を直接検証する最小のunit/contract/snapshot testを同じ変更内で実行する。影響packageの全testは統合waveごと、全XCUITestはユーザーフローの縦スライスまたはT17/T19の節目、clean clone・長時間性能・実機matrix・live end-to-endは該当Milestoneと最終受け入れで実行する。
-- 同じ未変更範囲の全suite、全XCUITest、clean clone、長時間実機試験を各小タスクや各commitで重複実行しない。契約、共有project設定、依存version、状態遷移、画像処理式などの変更で影響範囲が広がった場合だけ、必要な層まで前倒しして再実行する。
+- 1タスクのコードとfocused testをすべて書き終えた候補SHAに対し、task ownerが最後に**1回のauthoritative verification run**を実行する。これは対象targetのbuildと、そのタスクを直接検証する最小のunit/contract/snapshot testをまとめた1つのcommandまたはscript invocationとする。fixture/liveなど複数構成が必要な場合も、この最後のrun内で順番に実行する。
+- 実装途中の小編集、subcommit、review指摘ごとに成功buildを挟まない。authoritative runが失敗した場合は、原因となるcode/config/testを変更した後だけ再実行できる。成功結果は候補SHA、依存解決結果、Xcode/Swift version、実行commandとともに記録し、同一SHAを親AI、監査AI、別workerが再build・再testしない。
+- 親AIとreviewerは、差分とtask ownerのauthoritative resultを監査する。候補SHA、依存、共有project設定、契約、またはtest自体が変わった場合、証跡が欠落・破損した場合、再現性に具体的な疑義がある場合だけ、理由を記録して再実行する。
+- 影響packageの全testとapp integration buildは統合waveごとにintegration ownerが1回、全XCUITestはユーザーフローの縦スライスまたはT17/T19の節目、clean clone・長時間性能・実機matrix・live end-to-endは該当Milestoneと最終受け入れで実行する。同じ未変更範囲の重い検証を各タスクや各commitで重複実行しない。
+- `xcodebuild`、全package `swift test`、clean build、XCUITestなどの重いbuild/testはrepository全体で同時に1件だけ実行する。各タスクはscratch/DerivedData pathを1つだけ所有・再利用し、authoritative resultを記録した後に再生成可能なscratchを削除する。別workerが別scratchを作って同じSHAを再検証しない。
 - `fixture/live: 両方`は独立した2つの合格を意味し、fixture成功をlive成功の代用にしない。
 - カラー、レイアウト、撮影、回転、LiveKit publish、熱、採寸精度、保存は`task.md`で指定した実機gateを満たす。
 

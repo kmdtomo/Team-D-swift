@@ -149,7 +149,7 @@
 
 ## 2. Xcode／SwiftUIプロジェクトのscaffold
 
-- [ ] **T02-01 Xcode workspaceと分割targetを作る**
+- [x] **T02-01 Xcode workspaceと分割targetを作る**
   - 担当する責務: レーンAが、複数人で`project.pbxproj`競合を起こしにくいSwiftUIアプリ基盤を提供する。
   - 依存する先行タスク: T01-01, T01-02。
   - 実装対象: app target、`DomainKit`, `ContractKit`, `CaptureKit`, `APIClient`, `LiveKitBridge`, `MeasurementKit`, `CompositionKit`, `TestSupport`のlocal package/target、unit/UI test target、共有scheme。
@@ -157,6 +157,16 @@
   - 自動テスト方法: `xcodebuild`でbuild-for-testingと空のtest suiteを実行し、package依存循環を検査する。
   - 実機確認が必要か: 不要。
   - fixture / live: fixture。
+
+### T02-01 検証記録（2026-08-31）
+
+- Verification (2026-08-31):
+  - commit/build: `8e03e46 build: scaffold iPhone project targets`; Xcode 26.2 (17C52), Swift 6.2.3 compiler / Swift 6 language mode, iPhone 16 Pro Simulator (iOS 18.5, arm64)
+  - automated tests: clean clone `/tmp/teamd-clean-clone.t6pJvY` with clean temp paths: `swift build --package-path Packages --scratch-path <clean temp dir>`; `xcodebuild build-for-testing -workspace TeamD.xcworkspace -scheme TeamD -configuration Debug-Fixture -destination 'platform=iOS Simulator,id=9CF57E09-7DD0-4C17-9A98-7ECA8A9BD89A,arch=arm64' -derivedDataPath <clean temp dir> CODE_SIGNING_ALLOWED=NO`; `xcodebuild test-without-building -workspace TeamD.xcworkspace -scheme TeamD -configuration Debug-Fixture -destination 'platform=iOS Simulator,id=9CF57E09-7DD0-4C17-9A98-7ECA8A9BD89A,arch=arm64' -derivedDataPath <clean temp dir> CODE_SIGNING_ALLOWED=NO` (unit 1/1, UI 1/1); `python3 scripts/lint_package_graph.py`; `./scripts/lint_t01_01.sh`; `python3 scripts/lint_t01_02.py`; `git diff --check` all passed
+  - fixture: Debug-Fixture build-for-testing and both smoke suites passed from the clean clone; clone status remained clean
+  - live: not required
+  - device: not required
+  - limitations: Xcode 26.2 emits exactly three `appintentsmetadataprocessor` metadata-extraction diagnostics despite `ENABLE_APP_INTENTS_METADATA_PROCESSING=NO`; these are Xcode tool diagnostics with no source location, not source/compiler warnings. `scripts/check_xcode_warnings.py` allowlists only this exact text and rejects all other warning forms. Camera-first session composition and `front 1/4` behavior remain intentionally pending T02-02.
 
 - [ ] **T02-02 SwiftUI app shellと依存注入点を作る**
   - 担当する責務: レーンAが、fixture/live providerを画面コードから分離し、カメラ撮影をrootとする単一セッションを型安全に起動する。

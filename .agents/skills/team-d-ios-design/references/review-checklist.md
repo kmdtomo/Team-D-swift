@@ -4,6 +4,7 @@ Report actionable findings only. Distinguish a requirement violation from option
 
 ## Flow and state
 
+- Cold launch enters the in-flow permission state or `front 1/4` directly, with no home, list, dashboard, tab shell, login, or separate tutorial.
 - The current shot and total progress are understandable at a glance.
 - Front, back, tag, measurement, review, editing, approval, and recovery have explicit states.
 - Exactly one actionable instruction wins when several observations coexist.

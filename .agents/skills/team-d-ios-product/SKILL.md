@@ -31,6 +31,7 @@ Do not treat an implementation preference as a product requirement. Do not chang
 
 Unless the user explicitly changes it, preserve:
 
+- camera-first cold launch with no home, dashboard, tab shell, login gate, or separate tutorial before `front 1/4`;
 - the four-shot order `front -> back -> tag -> measurement`;
 - manual capture outside `READY`;
 - app-owned finite state transitions instead of AI prose;

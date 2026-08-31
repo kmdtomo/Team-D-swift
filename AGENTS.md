@@ -20,6 +20,7 @@ The priority order is the user's latest explicit instruction, `requirements.md`,
 
 ## Product invariants
 
+- Start cold launches in the camera capture flow: show the in-flow permission state when needed, otherwise show `front 1/4`. Do not add a home, dashboard, tab shell, login gate, or separate tutorial before capture.
 - Keep the fixed order `front -> back -> tag -> measurement`.
 - Keep the manual shutter available outside `READY` whenever capture is technically possible.
 - Never let AI free text, confidence, or `nextAction` alone accept a slot or choose navigation.

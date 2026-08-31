@@ -101,11 +101,11 @@
   - fixture / live: fixture。
 
 - [ ] **T02-02 SwiftUI app shellと依存注入点を作る**
-  - 担当する責務: レーンAが、fixture/live providerを画面コードから分離し、型安全に起動できる入口を持つ。
+  - 担当する責務: レーンAが、fixture/live providerを画面コードから分離し、カメラ撮影をrootとする単一セッションを型安全に起動する。
   - 依存する先行タスク: T02-01。
-  - 実装対象: `App` entry、root navigation、session composition root、clock/UUID/provider/image storeのprotocol注入、Preview用stub。
-  - 完了条件: 同一UIをfixture providerとlive providerのどちらでもcompositionでき、feature側が環境変数やsingletonへ直接アクセスしない。
-  - 自動テスト方法: dependency graphの生成テスト、fixture/live各compositionのsmoke test、SwiftUI Preview build。
+  - 実装対象: `App` entry、`front 1/4`カメラまたは同フロー内の権限状態を初期ルートにするsingle-session navigation、session composition root、clock/UUID/provider/image storeのprotocol注入、Preview用stub。ホーム、一覧、ダッシュボード、tab shell、login gate、独立tutorialは作らない。
+  - 完了条件: cold launchで権限未確定なら撮影フロー内の権限案内、それ以外なら`front 1/4`が最初に表示される。同一のカメラ起点UIをfixture providerとlive providerのどちらでもcompositionでき、feature側が環境変数やsingletonへ直接アクセスしない。
+  - 自動テスト方法: dependency graphの生成テスト、fixture/live各compositionのsmoke test、SwiftUI Preview build、cold-launch XCUITestでホーム・一覧・tabを経由せず権限状態または`front 1/4`へ到達することを検証する。
   - 実機確認が必要か: 不要。
   - fixture / live: 両方。
 
@@ -238,7 +238,7 @@
   - 担当する責務: レーンBが、現在shot、`1/4...4/4`、完了/残数、ローカル/Agent助言、接続状態を誤解なく表示する。
   - 依存する先行タスク: T04-01, T04-03, T06-01。
   - 実装対象: capture screen、progress、有限コード→固定localized文言、主助言selector、shutter、busy/retake、VoiceOver/Dynamic Type/haptic方針。
-  - 完了条件: 主助言は常に1件とし、優先順位を「工程不成立（表裏/tag/marker）→衣類欠け→距離/中央→真上/しわ→明るさ/ブレ→安定性→READY」に固定する。同一codeをdedupeし、enter/clear hysteresisを設定値として固定し、600ms安定前に`READY`へしない。`READY`以外でもshutterが有効で、AI messageは補助表示に留まり遷移を駆動せず、Agent切断表示中も固定ガイド・ローカル助言・shutterが残る。
+  - 完了条件: カメラ画面が撮影フローのrootとして維持され、ホームやtabへ移らず受理状態から次shotへ進む。主助言は常に1件とし、優先順位を「工程不成立（表裏/tag/marker）→衣類欠け→距離/中央→真上/しわ→明るさ/ブレ→安定性→READY」に固定する。同一codeをdedupeし、enter/clear hysteresisを設定値として固定し、600ms安定前に`READY`へしない。`READY`以外でもshutterが有効で、AI messageは補助表示に留まり遷移を駆動せず、Agent切断表示中も固定ガイド・ローカル助言・shutterが残る。
   - 自動テスト方法: 全Guidance/LocalQuality code、競合するAgent/local入力、閾値前後の揺れ、expiry/dedupeをfake clockで検証し、view-state snapshot、`READY`外tap、接続状態matrixをSwiftUI/XCUITestする。
   - 実機確認が必要か: 必須。屋内で可読性、操作領域、VoiceOver、手動撮影を確認する。
   - fixture / live: 両方。
@@ -502,8 +502,8 @@
 - [ ] **T17-03 fixtureの開始→保存と主要失敗をXCUITest化する**
   - 担当する責務: レーンFが、外部serviceなしで中心体験を決定的に完走させる。
   - 依存する先行タスク: T10-02, T13-03, T16-02, T17-01。
-  - 実装対象: 4枚happy path、各retake、expired guidance、Agent disconnect、AI error、marker failure→manual、mask invalid、background failure→fixed、original/composite approval、save spy。
-  - 完了条件: `1/4`開始から4枚、採寸明示承認、edit gate、比較、明示選択、保存まで自動完走し、3枚/未承認ではeditへ進めない。失敗scenarioは進捗保持をassertする。
+  - 実装対象: cold launch→`front 1/4`のカメラ起点、4枚happy path、各retake、expired guidance、Agent disconnect、AI error、marker failure→manual、mask invalid、background failure→fixed、original/composite approval、save spy。
+  - 完了条件: 権限状態または`front 1/4`から始まり、ホーム・一覧・tabを経由せず4枚、採寸明示承認、edit gate、比較、明示選択、保存まで自動完走する。3枚/未承認ではeditへ進めず、失敗scenarioは進捗保持をassertする。
   - 自動テスト方法: clean Simulatorで全scenarioをseed/clock固定実行し、screenshotとstate accessibility IDをartifact化する。
   - 実機確認が必要か: 不要。
   - fixture / live: fixture。

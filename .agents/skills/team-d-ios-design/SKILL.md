@@ -37,6 +37,13 @@ The preview may extend behind safe areas, but text and controls must avoid the n
 
 Use `front/back` garment safe frames, a `tag` rectangle, and a `measurement` garment frame plus lower-right 50mm marker frame. On orientation changes, recompute preview and guide transforms and invalidate stale stability observations; do not invent support for orientations the project has not selected.
 
+## Navigation model
+
+- Make the camera capture flow the app root. On cold launch, show the in-flow camera permission state when needed; otherwise show `front 1/4` immediately.
+- Do not add a home screen, feature list, dashboard, tab/sidebar shell, login gate, or separate tutorial before capture.
+- Treat measurement preparation, measurement review, background editing, comparison, approval, and export as ordered states of the same capture session, not independent destinations in a general app hierarchy.
+- Use a sheet, full-screen cover, or navigation destination only when the current state needs dedicated space. Returning must restore the same session and accepted slots rather than escape to an unrelated root.
+
 ## Guidance and copy
 
 - Display one primary issue after priority and stability selection. Prefer physical actions such as `少し離してください` over diagnoses such as `距離不足です`.

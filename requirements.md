@@ -23,6 +23,7 @@
 | 項目 | 確定範囲 |
 |---|---|
 | 対応端末 | iPhoneネイティブアプリ |
+| UIの起点 | 起動後は`front`のカメラ画面から開始する単一撮影セッション |
 | 対象 | 平置きの半袖クルーネックTシャツ1着 |
 | 必須写真 | `front → back → tag → measurement`の4枚 |
 | ガイド | AVFoundationプレビュー上の固定2Dガイド |
@@ -34,6 +35,8 @@
 | モード | Xcodeだけで完走できる`fixture`と、共有HTTPS backend＋LiveKit Cloudの`live` |
 
 ## 3. 確定ユーザーフロー
+
+アプリ起動後の初期ルートは`front`のカメラ画面とする。ホーム、一覧、ダッシュボード、タブバー、ログイン、独立したチュートリアルを前置しない。カメラ権限が未確定の場合だけ、同じ撮影フロー内で利用理由とsystem permissionを示す。採寸準備、採寸確認、背景編集、比較・承認は別機能の入口ではなく、この単一セッションから状態に応じて順に進む。
 
 1. 正面用の固定ガイドとリアルタイム助言を表示し、利用者が手動撮影する。
 2. 撮影後AIが撮影種別、品質、欠けを確認し、受理または理由付き撮り直しを示す。
@@ -50,6 +53,7 @@
 
 ### R1. カメラと固定2Dガイド
 
+- アプリはカメラ撮影フローをrootとし、起動後は権限前提を満たして直ちに`front 1/4`を表示する。
 - 背面カメラをAVFoundationで起動し、現在の撮影種別、`1/4`から`4/4`の進捗、工程別固定ガイド、主助言、手動シャッターを表示する。
 - `front/back`は衣類安全枠またはシルエット、`tag`は矩形、`measurement`は衣類全体枠と右下の50mmマーカー配置枠を使う。
 - ガイドはプレビューにだけ重ね、撮影画像の画素へ焼き込まない。
@@ -58,7 +62,7 @@
 ### R2. 撮影中のリアルタイム助言
 
 - 撮影セッション開始時に短命tokenを取得し、LiveKit Roomへ接続してカメラtrackをpublishする。
-- 意味判定はstateful Agentが最新frameを選択し、同時推論1を1件に限る。定期HTTP upload/polling、全frame保存、30fps全件推論を行わない。
+- 意味判定はstateful Agentが最新frameを選択し、同時推論を1件に限る。定期HTTP upload/polling、全frame保存、30fps全件推論を行わない。
 - Agentは有限な`GuidanceEvent`をLiveKit data packetまたはRPCでpushする。別session、別shot、既読以下sequence、期限切れのeventは破棄する。
 - 明るさ、ブレ、安定性はApple標準frameworkで端末内判定し、衣類の収まり、距離、中央寄せ、表裏、タグへの移動はAgent画像AIの助言とする。
 - 主助言は同時に1件だけ表示し、AI自由文、model名、confidence値をUIに表示しない。
@@ -146,7 +150,7 @@
 |---|---|---|
 | `GET /api/health` | backend稼働状態。secretを含めない | 実装済み |
 | `POST /api/livekit-token` | requestはstrictな`{sessionId}`。responseは`token`, `participantIdentity`, `roomName`, `expiresAt`, `livekitUrl` | 実装済み |
-| LiveKit Agent | camera track限定購読、capacity 1の最新frame、同時推論11件、Guidance push | transport coreは実装済み。実vision providerとpush配線は未実装 |
+| LiveKit Agent | camera track限定購読、capacity 1の最新frame、同時推論1件、Guidance push | transport coreは実装済み。実vision providerとpush配線は未実装 |
 | `POST /api/analyze-shot` | 高解像度写真＋要求shot → `ShotAssessment` | 未実装 |
 | `POST /api/suggest-measurement-points` | 補正済みmeasurement → 4つの`NormalizedPoint` | 未実装 |
 | `POST /api/generate-background` | 許可style ID/テキスト → 商品なし背景 | 未実装 |
@@ -166,6 +170,7 @@
 
 ## 7. iPhone UI・アクセシビリティ要件
 
+- UIはカメラ画面をrootとする単一の直線フローにする。ホーム、タブ、サイドバー、別の機能一覧を作らず、各確認画面は現在の撮影セッションの次状態として表示する。
 - SwiftUIのシステムコンポーネント、semantic text style、semantic color、safe areaを優先し、Webのpx/CSS/object-fit前提を持ち込まない。
 - カメラ映像を主役にし、進捗、主助言、シャッター、復帰操作の位置を一時的な助言で動かさない。
 - タップ可能領域はプロジェクト基準と44×44pt以上とし、操作をdrag、色、動き、hapticだけに依存させない。
@@ -209,6 +214,7 @@
 
 ## 10. 受け入れ条件
 
+- **AC-UI-001:** cold launch後は、カメラ権限が未確定なら撮影フロー内の権限案内、それ以外なら`front 1/4`のカメラ画面が最初に表示され、ホーム・一覧・タブを経由しない。
 - **AC-CAP-001:** 実機で工程別の固定2Dガイドとリアルタイム助言が表示される。
 - **AC-CAP-002:** 実機camera trackがLiveKit Roomへpublishされ、Agent助言が定期HTTP pollingなしでpushされる。
 - **AC-CAP-003:** 衣類の欠け、距離、表裏、タグ移動に対し、有限codeから作る1つの行動助言が撮影前に変化する。

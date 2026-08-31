@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Team-D T11-01 measurement corpus manifest",
+  "type": "object",
+  "required": ["schemaVersion", "generator", "marker", "thresholds", "failureCodes", "cases"],
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "generator": {"type": "string", "const": "generate_synthetic.py"},
+    "marker": {
+      "type": "object",
+      "required": ["outerMm", "blackFrameMm", "whiteInnerMm", "printScale"],
+      "properties": {
+        "outerMm": {"const": 50.0},
+        "blackFrameMm": {"const": 5.0},
+        "whiteInnerMm": {"const": 40.0},
+        "printScale": {"const": "100%"}
+      },
+      "additionalProperties": false
+    },
+    "thresholds": {"type": "object"},
+    "failureCodes": {"type": "array", "minItems": 8, "items": {"type": "string"}},
+    "cases": {"type": "array", "minItems": 1, "items": {"type": "object"}}
+  },
+  "additionalProperties": false
+}

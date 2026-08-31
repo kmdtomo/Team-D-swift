@@ -405,7 +405,7 @@
   - 実機確認が必要か: 必須。各shot、回転、Dynamic Typeで確認する。
   - fixture / live: 両方。
 
-- [ ] **T06-02 進捗・主助言・手動シャッターUIを作る**
+- [x] **T06-02 進捗・主助言・手動シャッターUIを作る**
   - 担当する責務: レーンBが、現在shot、`1/4...4/4`、完了/残数、ローカル/Agent助言、接続状態を誤解なく表示する。
   - 依存する先行タスク: T04-01, T04-03, T06-01。
   - 実装対象: capture screen、progress、有限コード→固定localized文言、主助言selector、shutter、busy/retake、VoiceOver/Dynamic Type/haptic方針。
@@ -413,6 +413,7 @@
   - 自動テスト方法: 全Guidance/LocalQuality code、競合するAgent/local入力、閾値前後の揺れ、expiry/dedupeをfake clockで検証し、view-state snapshot、`READY`外tap、接続状態matrixをSwiftUI/XCUITestする。
   - 実機確認が必要か: 必須。屋内で可読性、操作領域、VoiceOver、手動撮影を確認する。
   - fixture / live: 両方。
+  - 実装記録 (2026-09-01): finite presentation `7ebbcab`とnative SwiftUI capture surface `2fb8f64`をmainへ統合済み。productionと対応test codeのcommit時点でチェックし、作業状態は`code_ready_unverified`。build/test/XCUITest、T10のapp flow接続、屋内可読性・VoiceOver・最大Dynamic Type・非`READY`手動撮影の実機証跡は残るgateである。
 
 ## 7. 明るさ・ブレ・安定性の端末内判定
 

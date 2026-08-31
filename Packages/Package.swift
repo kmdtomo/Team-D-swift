@@ -5,7 +5,9 @@ import PackageDescription
 /// implementations can evolve independently behind their future protocols.
 let package = Package(
     name: "TeamDModules",
-    platforms: [.iOS(.v18)],
+    platforms: [
+        .iOS(.v18),
+    ],
     products: [
         .library(name: "DomainKit", targets: ["DomainKit"]),
         .library(name: "ContractKit", targets: ["ContractKit"]),
@@ -18,16 +20,49 @@ let package = Package(
     ],
     targets: [
         .target(name: "DomainKit"),
-        .target(name: "ContractKit", dependencies: ["DomainKit"]),
-        .target(name: "CaptureKit", dependencies: ["DomainKit"]),
-        .target(name: "APIClient", dependencies: ["ContractKit"]),
-        .target(name: "LiveKitBridge", dependencies: ["CaptureKit", "ContractKit"]),
-        .target(name: "MeasurementKit", dependencies: ["DomainKit"]),
-        .target(name: "CompositionKit", dependencies: ["DomainKit"]),
+        .target(
+            name: "ContractKit",
+            dependencies: ["DomainKit"]
+        ),
+        .target(
+            name: "CaptureKit",
+            dependencies: ["DomainKit"]
+        ),
+        .target(
+            name: "APIClient",
+            dependencies: ["ContractKit"]
+        ),
+        .target(
+            name: "LiveKitBridge",
+            dependencies: ["CaptureKit", "ContractKit"]
+        ),
+        .target(
+            name: "MeasurementKit",
+            dependencies: ["DomainKit"]
+        ),
+        .target(
+            name: "CompositionKit",
+            dependencies: ["DomainKit"]
+        ),
         .target(
             name: "TestSupport",
-            dependencies: ["DomainKit", "ContractKit", "CaptureKit", "APIClient", "LiveKitBridge", "MeasurementKit", "CompositionKit"],
+            dependencies: [
+                "DomainKit",
+                "ContractKit",
+                "CaptureKit",
+                "APIClient",
+                "LiveKitBridge",
+                "MeasurementKit",
+                "CompositionKit",
+            ],
             path: "Sources/TestSupport"
+        ),
+        .testTarget(
+            name: "ContractKitTests",
+            dependencies: ["ContractKit", "DomainKit"],
+            resources: [
+                .copy("Resources/Golden"),
+            ]
         ),
     ]
 )

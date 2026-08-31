@@ -323,7 +323,7 @@
   - device: not required
   - limitations: none within T04-01; session artifact ownership and stale-result cleanup remain T04-02, and LiveKit connection/guidance filtering remains T04-03
 
-- [x] **T04-02 セッション内storeと終了時破棄を定義する**
+- [ ] **T04-02 セッション内storeと終了時破棄を定義する**
   - 担当する責務: レーンAが、画像・判定・採寸・中間生成物の所有権と寿命を一元管理する。
   - 依存する先行タスク: T04-01。
   - 実装対象: 4slot原本、assessment、measurement draft/approval、mask/background/composite候補、session/request/image ID、operation version、in-memory/保護付き一時file方針、明示的`endSession`。
@@ -341,6 +341,11 @@
   - live: the same store and protected-temporary adapter compiled in the non-fixture Debug iOS Simulator build without provider substitution; this task has no backend call or credential dependency, and no live failure is converted to fixture success
   - device: not required
   - limitations: none within T04-02; camera ingestion and final approved export integration remain in their owning downstream tasks
+
+- Post-acceptance review correction (2026-08-31):
+  - state: `in_progress`; the committed store artifacts remain usable for downstream fixture/mock starts, but the task is not accepted until this correction passes
+  - open defects: operation tokens are not bound to source-image revisions, so retakes can retain stale measurement/edit artifacts; protected temporary-file deletion failures are swallowed and cannot be retried; duplicate `ImageID` values make untyped loads ambiguous
+  - release condition: atomically invalidate source-dependent artifacts on original replacement/retake, reject stale completions, make cleanup failures observable and retryable, make image lookup deterministic, and pass focused DomainKit regressions plus the affected iOS build
 
 - [ ] **T04-03 ライブ接続状態と助言順序を撮影状態から分離する**
   - 担当する責務: レーンA/Cが、切断・再接続・古いeventで撮影進捗を巻き戻さない。

@@ -456,6 +456,7 @@
   - 自動テスト方法: mock token endpoint、fake Room delegate、invalid packet、publish/leave idempotency、HTTP request recorderでanalyze-live pollingがないことを検証する。
   - 実機確認が必要か: 必須。共有LiveKit Cloud＋Agentでpublish/subscription/pushを確認する。
   - fixture / live: live（packet処理はfixtureでも自動確認）。
+  - 進捗・blocker記録 (2026-09-01): partial core `8b542ec feat(t08-02): add live guidance connection core`をmainへ統合済み。token request、Room transport protocol、join/leave、app-produced publish request、lossy `GuidanceEvent` strict decode/filter、未確定reliable bytesのopaque境界、generation/session/request stale guard、typed unavailableと未実行test codeは安定artifact。taskは未チェックで、Lane A/CによるLiveKit Swift SPM固定・実Room adapter、T05/T08-01 original `CMSampleBuffer` handoff、参照元shared backend ownerによるAgent guidance push、共有Cloud credential、実機publish/subscription/pushとp95証跡が解除条件である。fixture/mock成功をlive成功へ置換しない。
 
 - [ ] **T08-03 再接続、reliable同期、Agent不在fallbackを作る**
   - 担当する責務: レーンC/Aが、ネットワーク断で進捗を失わず、古い助言で巻き戻らないようにする。

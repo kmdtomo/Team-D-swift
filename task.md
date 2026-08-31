@@ -294,7 +294,7 @@
   - device: not required
   - limitations: none within T04-01; session artifact ownership and stale-result cleanup remain T04-02, and LiveKit connection/guidance filtering remains T04-03
 
-- [ ] **T04-02 セッション内storeと終了時破棄を定義する**
+- [x] **T04-02 セッション内storeと終了時破棄を定義する**
   - 担当する責務: レーンAが、画像・判定・採寸・中間生成物の所有権と寿命を一元管理する。
   - 依存する先行タスク: T04-01。
   - 実装対象: 4slot原本、assessment、measurement draft/approval、mask/background/composite候補、session/request/image ID、operation version、in-memory/保護付き一時file方針、明示的`endSession`。
@@ -302,6 +302,16 @@
   - 自動テスト方法: controlled continuationとfake image storeで古い完了結果の破棄、deallocation/cleanup、session切替、URLCache不使用、state snapshotにbinaryやsecretが入らないことを検証する。
   - 実機確認が必要か: 不要。
   - fixture / live: 両方。
+
+### T04-02 検証記録（2026-08-31）
+
+- Verification (2026-08-31):
+  - commit/build: `032ea4c feat: add session-scoped artifact store`; clean clone `/tmp/teamd-t04-02-clean.gkfxWP/repo` at `032ea4cca282df9c91371f322a0fdea180ad12fb`; Xcode 26.2 (17C52), Swift 6.2.3 compiler / Swift 6 language mode, iPhone 16 Pro Simulator (iOS 18.5, arm64)
+  - automated tests: from the clean clone, `swift test --package-path Packages --scratch-path /tmp/teamd-t04-02-clean.gkfxWP/swift --filter DomainKitTests` passed 31/31; the full package suite passed 56/56; `swift build --package-path Packages --scratch-path /tmp/teamd-t04-02-clean.gkfxWP/swift-build`; `./scripts/docs_smoke_fixture.sh` passed (UI 1/1, `TEST SUCCEEDED`); non-fixture `xcodebuild build -configuration Debug` passed; warning checks found 3 fixture / 1 live known AppIntents diagnostics and 0 unexpected; package graph, T01, and T03-02 lints; `git diff --check`; source scans for normal cache/persistence APIs and secret patterns; clean-clone status all passed
+  - fixture: controlled continuations cover cancel, retake, session replacement, delayed load, delayed cleanup, same-ID/new-generation, same-image-ID collision, and backing write-then-fail cleanup without sleeps; snapshots retain only finite IDs, assessment, measurement points/values/source, and approval while excluding binary/URL/secret sentinels; in-memory and protected-temporary fake/adapter cleanup tests passed deterministically
+  - live: the same store and protected-temporary adapter compiled in the non-fixture Debug iOS Simulator build without provider substitution; this task has no backend call or credential dependency, and no live failure is converted to fixture success
+  - device: not required
+  - limitations: none within T04-02; camera ingestion and final approved export integration remain in their owning downstream tasks
 
 - [ ] **T04-03 ライブ接続状態と助言順序を撮影状態から分離する**
   - 担当する責務: レーンA/Cが、切断・再接続・古いeventで撮影進捗を巻き戻さない。

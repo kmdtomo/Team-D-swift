@@ -553,7 +553,7 @@
   - 実機確認が必要か: 必須。異なる距離/傾きでscale再現性を確認する。
   - fixture / live: 両方。
 
-- [ ] **T12-02 測定点提案APIを1回だけ呼びstrictに検証する**
+- [x] **T12-02 測定点提案APIを1回だけ呼びstrictに検証する**
   - 担当する責務: レーンC/Dが、補正済み画像から意味的4端点だけを取得し、cm決定を端末幾何に残す。
   - 依存する先行タスク: T03-02, T03-05, T12-01。
   - 実装対象: Swift側の`/api/suggest-measurement-points` client、`{x,y}`形式のlengthStart/End・widthStart/End、0...1検査、single-flight/call count、timeout/schema fallback。responseに`confidence`を含めず、endpoint本体は参照元で未実装の外部依存とする。
@@ -561,6 +561,7 @@
   - 自動テスト方法: URLProtocol spyで送信回数1、payload image、strict key/range、timeout/cancel、fallback stateを検証する。
   - 実機確認が必要か: 必須。共有backendの正常/timeoutを確認する。
   - fixture / live: 両方。
+  - 実装記録 (2026-09-01): `1eed6af feat: add strict measurement point client`をmainへ統合済み。最新の明示運用により実装と対応test codeのcommit時点でチェックし、作業状態は`code_ready_unverified`。build/testは未実行で、T12-01との製品統合、未実装の共有backend、fixture/live、実機の正常/timeout証跡は残るgateである。
 
 - [x] **T12-03 4端点から着丈・身幅を0.1cm単位で計算する**
   - 担当する責務: レーンDが、AIの提案を補正面へ写像し、物理量を決定的に算出する。
@@ -604,7 +605,7 @@
 
 ## 14. 背景分離・背景生成APIとの接続
 
-- [ ] **T14-01 編集gate後にfrontだけをmask APIへ送る**
+- [x] **T14-01 編集gate後にfrontだけをmask APIへ送る**
   - 担当する責務: レーンC/Eが、正面原本以外を変更・送信せず、mask-only結果を検証する。
   - 依存する先行タスク: T03-02, T03-05, T04-02, T10-01, T13-02またはT13-03。
   - 実装対象: Swift側の`/api/remove-background` multipart client、front original ID、PNG decode、寸法/空/全面mask検証、35秒timeout/retry、original fallback。endpoint本体は参照元で未実装の外部依存とする。
@@ -612,6 +613,7 @@
   - 自動テスト方法: request recorderでgate/front-only/model非露出、空/全面/寸法不一致/非PNG、timeout、retryを検証する。
   - 実機確認が必要か: 必須。共有FastAPI→rembg/BiRefNetの正常/停止を確認する。
   - fixture / live: 両方。
+  - 実装記録 (2026-09-01): `0d7ea6d feat(t14-01): add front-only garment mask client`をmainへ統合済み。最新の明示運用により実装と対応test codeのcommit時点でチェックし、作業状態は`code_ready_unverified`。build/testは未実行で、session/app統合、未実装の共有`/api/remove-background`、protected contract smoke、fixture/live、実機の正常/停止証跡は残るgateである。
 
 - [ ] **T14-02 許可styleから背景だけを生成する**
   - 担当する責務: レーンC/Eが、商品情報を生成APIへ渡さず空の撮影背景候補を取得する。

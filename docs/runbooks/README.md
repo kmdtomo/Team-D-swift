@@ -7,9 +7,12 @@ procedure has already passed.
 
 ## Current implementation truth
 
-The repository is pinned to the read-only source audit at
-`neko-jpg/Team-D@44065d41e8906d34e5d8e11d7cd4cc14b25d17f2`.
-At this Swift repository revision:
+Current backend implementation and availability are not pinned to one source
+commit. Before backend-dependent planning or live work, refresh the read-only
+remote default branch of `neko-jpg/Team-D` and record the inspected commit and
+retrieval time. The audit at
+`neko-jpg/Team-D@44065d41e8906d34e5d8e11d7cd4cc14b25d17f2` remains historical v1
+contract evidence only. At this Swift repository revision:
 
 - `Debug-Fixture` is deterministic and requires no backend, LiveKit project,
   Docker, API credential, or physical camera.
@@ -17,11 +20,12 @@ At this Swift repository revision:
   `livekit.example.invalid`.
 - live startup uses `UnavailableLiveRuntimeProvider`; it fails visibly and
   never substitutes fixture success.
-- the audited source implements health and token issuance. Shared HTTPS
+- the historical v1 audit recorded health and token issuance. Shared HTTPS
   staging, Agent guidance push, explicit 1--2 fps sampling, shot analysis,
   measurement-point suggestion, background generation, and background removal
-  are still release-gated as recorded in
-  [the backend gap audit](../architecture/t03-05-backend-gap-audit.md).
+  were release-gated at that audit. Recheck them at the latest inspected
+  backend commit before treating any item as available or blocked; the original
+  facts remain in [the backend gap audit](../architecture/t03-05-backend-gap-audit.md).
 - T18 physical-device and end-to-end live evidence is pending. Nothing in
   these runbooks claims T18 completion.
 
@@ -44,9 +48,11 @@ Fixture and live are independent modes and need independent evidence.
 
 The established first-run details remain in
 [the T02-03 fixture baseline](../development/fixture-baseline.md). Contract and
-availability authority remains in
+historical v1 availability provenance remain in
 [`Contracts/HTTP/v1/availability.json`](../../Contracts/HTTP/v1/availability.json)
 and [`Contracts/HTTP/v1/openapi.json`](../../Contracts/HTTP/v1/openapi.json).
+Current live availability comes from the latest inspected backend commit;
+contract drift must be synchronized explicitly before Swift consumes it.
 
 ## Evidence boundary
 

@@ -2,17 +2,18 @@
 
 ## 0. この計画の前提
 
-- 参照元は [`neko-jpg/Team-D`](https://github.com/neko-jpg/Team-D) の `44065d41e8906d34e5d8e11d7cd4cc14b25d17f2`（2026-08-31 18:38 JST時点の`main`）に固定する。参照元は読み取り専用とし、変更・commit・pushしない。
+- 参照元backendは [`neko-jpg/Team-D`](https://github.com/neko-jpg/Team-D) のリモートdefault branchとする。backend関連の計画・実装・review・live検証の開始時に読み取り専用で最新を取得・確認し、確認したcommit SHAと時刻を作業・検証証跡に記録する。現在のbackend実装やavailabilityを特定SHAに永続固定せず、参照元を変更・commit・branch・pushしない。
 - Swift版の機能要件と受け入れ条件は本リポジトリの[`requirements.md`](./requirements.md)を正本とする。参照元のOpenSpec `specs/`、`requirements.md`、`architecture.md`はその調査根拠である。OpenSpecは参照元だけで維持し、Swiftリポジトリに`openspec/`やその運用を持ち込まない。Web固有の実装選択は継承しない。矛盾が見つかった場合は、要件を変更せず`requirements.md`と本ファイルに契約差分を記録し、解消するまで該当実装を進めない。
+- 最新backendの変更は、Swift版の要件やversion付きwire contractを暗黙に上書きしない。差分を検出したら、影響範囲を限定した同期作業で必要な要件、schema、golden、fixture、taskを更新する。過去のcommit SHAは契約・fixture・監査・検証の再現用出典として保持する。
 - このファイルのチェックは、既存Web版の完了状態と無関係に**すべて未完了から開始**する。Web版は並行して維持する。
 - 対象は平置きの半袖クルーネックTシャツ1着、必須写真は `front → back → tag → measurement` の4枚、採寸項目は着丈と身幅だけとする。
 - UIはSwiftUI、カメラはAVFoundation、非同期処理はSwift Concurrency、通信はURLSession、ライブ映像はLiveKit Swift SDK、画像処理はVision/Core Image/Accelerate/ImageIO/simd、合成はCore ImageまたはCore Graphics、テストはSwift Testing/XCTest/XCUITestを第一候補とする。
 - iOSクライアント開発にDockerを必須としない。fixtureモードはXcodeだけで完走でき、liveモードは共有HTTPS backendとLiveKit Cloudへ接続する。ローカルbackendは任意手順に分離する。
 - ARKit、WebXR、3D AR、6DoF、自動撮影は使用しない。AVFoundationプレビュー上の固定2Dガイドだけを使用する。
-- 参照元snapshotには、Python FastAPIの`/api/health`と`/api/livekit-token`、短命・最小権限token発行、LiveKit Agentのcamera track限定購読、capacity 1のlatest-frame処理、同時推論1件、`VisionGuidanceProvider`契約、`GuidanceStateMachine`、JS Room接続smoke、Python/TypeScriptのcontract testが実装済みである。これらはSwiftへ移植せず、共有backendとして再利用する。
-- 同snapshotで未実装なのは、実際のvision providerをAgentへ接続してGuidance data packet/RPCをpushする配線、`POST /api/analyze-shot`、`/api/suggest-measurement-points`、`/api/generate-background`、`/api/remove-background`である。Swift側でbackendを実装せず、各live taskの外部依存として明示する。未提供中もfixture開発は止めず、liveを利用可能と偽らない。
+- 初期調査commit `44065d41e8906d34e5d8e11d7cd4cc14b25d17f2`（2026-08-31 18:38 JST時点）には、Python FastAPIの`/api/health`と`/api/livekit-token`、短命・最小権限token発行、LiveKit Agentのcamera track限定購読、capacity 1のlatest-frame処理、同時推論1件、`VisionGuidanceProvider`契約、`GuidanceStateMachine`、JS Room接続smoke、Python/TypeScriptのcontract testが実装済みだった。これは履歴的な調査基準であり、現在のbackend availabilityは作業開始時に最新default branchで再確認する。backendはSwiftへ移植せず共用する。
+- 同初期調査commitで未実装だったのは、実際のvision providerをAgentへ接続してGuidance data packet/RPCをpushする配線、`POST /api/analyze-shot`、`/api/suggest-measurement-points`、`/api/generate-background`、`/api/remove-background`である。この情報は現在の未実装を保証しない。最新確認後も未提供のものは各live taskの外部依存として明示し、Swift側で代替backendを実装せず、liveを利用可能と偽らない。fixture開発は止めない。
 
-調査根拠は、同snapshotの [`requirements.md`](https://github.com/neko-jpg/Team-D/blob/44065d41e8906d34e5d8e11d7cd4cc14b25d17f2/requirements.md)、[`architecture.md`](https://github.com/neko-jpg/Team-D/blob/44065d41e8906d34e5d8e11d7cd4cc14b25d17f2/architecture.md)、[OpenSpec design](https://github.com/neko-jpg/Team-D/blob/44065d41e8906d34e5d8e11d7cd4cc14b25d17f2/openspec/changes/build-listing-photo-assistant-mvp/design.md)、[`guided-garment-capture` spec](https://github.com/neko-jpg/Team-D/blob/44065d41e8906d34e5d8e11d7cd4cc14b25d17f2/openspec/changes/build-listing-photo-assistant-mvp/specs/guided-garment-capture/spec.md)、[`background-preserving-edit` spec](https://github.com/neko-jpg/Team-D/blob/44065d41e8906d34e5d8e11d7cd4cc14b25d17f2/openspec/changes/build-listing-photo-assistant-mvp/specs/background-preserving-edit/spec.md)、[`backend/`](https://github.com/neko-jpg/Team-D/tree/44065d41e8906d34e5d8e11d7cd4cc14b25d17f2/backend)、[`tests/`](https://github.com/neko-jpg/Team-D/tree/44065d41e8906d34e5d8e11d7cd4cc14b25d17f2/tests)とする。
+初期調査の履歴根拠は、同commitの [`requirements.md`](https://github.com/neko-jpg/Team-D/blob/44065d41e8906d34e5d8e11d7cd4cc14b25d17f2/requirements.md)、[`architecture.md`](https://github.com/neko-jpg/Team-D/blob/44065d41e8906d34e5d8e11d7cd4cc14b25d17f2/architecture.md)、[OpenSpec design](https://github.com/neko-jpg/Team-D/blob/44065d41e8906d34e5d8e11d7cd4cc14b25d17f2/openspec/changes/build-listing-photo-assistant-mvp/design.md)、[`guided-garment-capture` spec](https://github.com/neko-jpg/Team-D/blob/44065d41e8906d34e5d8e11d7cd4cc14b25d17f2/openspec/changes/build-listing-photo-assistant-mvp/specs/guided-garment-capture/spec.md)、[`background-preserving-edit` spec](https://github.com/neko-jpg/Team-D/blob/44065d41e8906d34e5d8e11d7cd4cc14b25d17f2/openspec/changes/build-listing-photo-assistant-mvp/specs/background-preserving-edit/spec.md)、[`backend/`](https://github.com/neko-jpg/Team-D/tree/44065d41e8906d34e5d8e11d7cd4cc14b25d17f2/backend)、[`tests/`](https://github.com/neko-jpg/Team-D/tree/44065d41e8906d34e5d8e11d7cd4cc14b25d17f2/tests)とする。新しいbackend関連作業はこのcommitを現在の正本とせず、その時点の最新default branchと差分を確認する。
 
 ### 引き継ぐ契約の要約
 
@@ -111,18 +112,19 @@ taskを`[x]`へ変更するcommitには、既存の最終`Verification`記録と
 
 ## 1. 既存資産の棚卸しと移行境界
 
-- [x] **T01-01 参照元snapshotと要件トレーサビリティを固定する**
-  - 担当する責務: レーンAが、参照元commitとSwift版へ継ぐ要件・受け入れ条件を一意に追跡できるようにする。
+- [x] **T01-01 参照元backendの追従方針と要件トレーサビリティを管理する**
+  - 担当する責務: レーンAが、最新backendの確認commitとSwift版へ継ぐ要件・受け入れ条件を区別して追跡できるようにする。
   - 依存する先行タスク: なし。
-  - 実装対象: `requirements.md`と本`task.md`内のsnapshot記録、参照元OpenSpec/requirements/architectureからSwift受け入れID・タスクへの対応、未解決差分一覧。別のOpenSpecや移行manifestは作成しない。
-  - 完了条件: source repo URLとcommit SHAが`requirements.md`と本ファイルに固定され、全受け入れIDが少なくとも1つの本ファイル内タスクへ紐付き、現行3slot実装を正本にしないことが明記され、Swiftリポジトリ内に`openspec/`が存在しない。
-  - 自動テスト方法: CIで`requirements.md`と本ファイルのSHA形式、参照リンク、受け入れIDの重複・未割当、`openspec/`非存在をlintする。
+  - 実装対象: `requirements.md`と本`task.md`内の最新backend確認方針、履歴的な出典commit、参照元OpenSpec/requirements/architectureからSwift受け入れID・タスクへの対応、未解決差分一覧。別のOpenSpecや移行manifestは作成しない。
+  - 完了条件: source repo URL、backend関連作業ごとの最新default branch確認、確認commit・時刻の証跡化、契約差分の扱いが`requirements.md`と本ファイルに明記され、現在のbackendが永続的なSHAへ固定されない。加えて、全受け入れIDが少なくとも1つの本ファイル内タスクへ紐付き、現行3slot実装を正本にしないことが明記され、Swiftリポジトリ内に`openspec/`が存在しない。
+  - 自動テスト方法: CIで`requirements.md`と本ファイルの追従方針、履歴SHAと現在の正本の分離、参照リンク、受け入れIDの重複・未割当、`openspec/`非存在をlintする。
   - 実機確認が必要か: 不要。
   - fixture / live: 両方の設計境界を確認する。
 
 ### T01-01 トレーサビリティ記録（2026-08-31）
 
-- 固定参照元: [`neko-jpg/Team-D@44065d41e8906d34e5d8e11d7cd4cc14b25d17f2`](https://github.com/neko-jpg/Team-D/tree/44065d41e8906d34e5d8e11d7cd4cc14b25d17f2)。このSHA以外の参照元`main`は要件入力にしない。
+- 初期調査基準: [`neko-jpg/Team-D@44065d41e8906d34e5d8e11d7cd4cc14b25d17f2`](https://github.com/neko-jpg/Team-D/tree/44065d41e8906d34e5d8e11d7cd4cc14b25d17f2)。このSHAは履歴・v1契約・fixtureの出典であり、現在のbackend正本を永続的に固定しない。
+- 新しいbackend関連作業は、参照元のリモートdefault branchを更新確認し、確認したcommit SHAと時刻、現行のversion付きSwift契約との差分を記録する。
 - 調査根拠は参照元の`requirements.md`、`architecture.md`、OpenSpec design、および2つのOpenSpec specである。Swift版の正本は本リポジトリの`requirements.md`であり、`openspec/`、移行manifest、参照元の文書・Web実装は追加しない。
 - 現行参照元の3slot実装は正本ではない。Swift版は`front → back → tag → measurement`の4slotを正本とし、`measurement`を`ShotAssessment`契約へ混在させない。
 - fixtureはXcode/Simulatorで決定的に完走する開発・検証モード、liveは共有HTTPS backendとLiveKit Cloudを使う独立検証モードである。live障害をfixture成功へ置換しない。
@@ -137,6 +139,7 @@ taskを`[x]`へ変更するcommitには、既存の最終`Verification`記録と
 | AC-CAP-004 | T04-03, T08-03, T18-01, T19-04 | SRC-G「ライブ助言はサーバーからpush」のstale scenario, SRC-G「画面遷移はアプリ状態から決定」 |
 | AC-CAP-005 | T05-01, T06-01, T06-02, T18-01, T19-04 | SRC-R §5 R1/R2, SRC-G「手動撮影はライブ判定により禁止されない」 |
 | AC-CAP-006 | T09-01, T09-02, T10-01, T17-03, T18-03, T19-04 | SRC-R §5 R3/R4, SRC-G「撮影後AIは限定された構造化結果を返す」 |
+| AC-CAP-007 | T08-03, T10-01, T17-02, T18-03, T19-04 | 最新backendのshot-aware Agent状態とSRC-G「画面遷移はアプリ状態から決定」をSwift/LiveKit間の明示context同期として固定 |
 | AC-FLOW-001 | T04-01, T10-01, T17-03, T18-03, T19-04 | SRC-R §4/§5 R4, SRC-G「撮影セッションは必須写真と進捗を示す」 |
 | AC-MEAS-001 | T11-02, T12-01, T12-02, T12-03, T13-01, T13-02, T18-03, T19-04 | SRC-R §5 R5, SRC-A §6, SRC-G「採寸」「幾何検証」「補正と承認」 |
 | AC-MEAS-002 | T10-02, T13-03, T17-03, T18-03, T19-04 | SRC-G「採寸写真を幾何検証して縮尺を得る」のfailure scenarios, SRC-G「カメラと外部処理の失敗から復帰」 |
@@ -145,6 +148,7 @@ taskを`[x]`へ変更するcommitには、既存の最終`Verification`記録と
 | AC-EDIT-001 | T14-01, T15-02, T17-02, T19-04 | SRC-R §5 R6/R7, SRC-B「正面画像だけを編集対象にする」 |
 | AC-EDIT-002 | T14-02, T17-02, T19-04 | SRC-R §5 R6, SRC-D「商品を含まない背景だけを生成する」 |
 | AC-EDIT-003 | T15-01, T15-02, T17-01, T19-04 | SRC-R §5 R7, SRC-A §8, SRC-B「商品領域は元画像とmaskから合成」 |
+| AC-EDIT-004 | T14-01, T15-01, T17-01, T19-04 | 利用者の最新明示要件。SRC-Bのmask検証と元front画素保持を透明中間previewへ適用 |
 | AC-APPROVAL-001 | T13-01, T13-02, T16-01, T17-03, T19-04 | SRC-R §5 R5/R8, SRC-G「補正と承認」, SRC-B「比較して承認」 |
 | AC-DATA-001 | T04-02, T16-02, T17-01, T18-02, T19-04 | SRC-R §5 R9, SRC-A §9, SRC-G「失敗から復帰」 |
 | AC-MODE-001 | T03-03, T03-04, T10-02, T17-01, T17-02, T17-03, T19-04 | SRC-R §5 R9, SRC-D §4「Python backendのprovider境界」 |
@@ -152,11 +156,11 @@ taskを`[x]`へ変更するcommitには、既存の最終`Verification`記録と
 
 #### 未解決の参照元差分／外部依存
 
-| 項目 | 現時点の事実 | 所有・解消条件 |
+| 項目 | 初期監査時点の事実（作業開始時に最新を再確認） | 所有・解消条件 |
 |---|---|---|
 | Guidance sequence | 参照元TypeScript schemaは`sequence=0`を許容するが、実装済みPython backend wireは1以上を要求する。 | T03-01でSwiftはwireに合わせ0を拒否し、参照元側のschema差分を解消または互換方針として記録する。 |
-| Agent Guidance push | transport coreはあるが、実vision providerからdata packet/RPCへpushする配線は未実装。 | 参照元shared backend owner。T03-02/T03-05でavailabilityとversion付き契約を固定し、T08-02 live完了前に提供する。 |
-| 4つのHTTP endpoint | `/api/analyze-shot`、`/api/suggest-measurement-points`、`/api/generate-background`、`/api/remove-background`は参照元snapshotで未実装。 | 参照元shared backend owner。Swiftは代替backendを実装せず、T03-02でcontractを固定し各live taskの外部blockerとして扱う。 |
+| Agent Guidance push | transport coreはあるが、実vision providerからdata packet/RPCへpushする配線は未実装だった。 | 参照元shared backend owner。T08-02のbackend関連作業開始時に最新default branchで再監査し、未提供ならversion付き契約とlive blockerを維持する。 |
+| 4つのHTTP endpoint | `/api/analyze-shot`、`/api/suggest-measurement-points`、`/api/generate-background`、`/api/remove-background`は初期調査commitで未実装だった。 | 参照元shared backend owner。各live taskの開始時に最新default branchで再監査し、未提供ならSwiftは代替backendを実装せずversion付きcontract上の外部blockerとして扱う。 |
 | fixture binary | 参照元9画像のコピー可否・利用許諾・hashは未判定。 | T01-02で資産単位に許可または不採用を決めるまでコピーしない。 |
 | AC-DEVICE-001 evidence | VoiceOverと最大Dynamic Typeの実機確認は要件にあるが、T18-01/T19-04の完了条件に明示的な照合項目がない。 | T19-04のtrace/evidence設計時に未充足として扱い、要件を変更せず、該当タスクの範囲で明示的な証跡チェックを追加する。 |
 
@@ -492,8 +496,8 @@ taskを`[x]`へ変更するcommitには、既存の最終`Verification`記録と
 - [ ] **T08-03 再接続、reliable同期、Agent不在fallbackを作る**
   - 担当する責務: レーンC/Aが、ネットワーク断で進捗を失わず、古い助言で巻き戻らないようにする。
   - 依存する先行タスク: T04-03, T08-02。
-  - 実装対象: reconnect policy/status、現在shot＋last sequenceのRPC同期、step/受理用reliable message、Agent不在表示、manual retry。
-  - 完了条件: 接続断中もガイド・ローカル品質・shutter・受理slotを維持し、復旧後は同期した新sequenceから再開する。live断をfixture結果へ置換しない。
+  - 実装対象: reconnect policy/status、現在shot＋last sequenceのRPC同期、step/受理用reliable message、Agent不在表示、manual retry。app→Agent context v1は`type=capture_context`、`sessionId`、1から単調増加する`revision`、`shot`、固定順で重複のない`acceptedShots`、nullableな`lastGuidanceSequence`だけを含み、画像・自由文・confidence・遷移commandを含めない。送信topicは`teamd.capture.context.v1`、reliable固定とする。
+  - 完了条件: 接続断中もガイド・ローカル品質・shutter・受理slotを維持し、初回join、shot受理、retake、復旧後に最新contextを最1件reliable送信する。復旧後は同期した新sequenceから再開し、live断をfixture結果へ置換しない。共有backendがこのv1 contextを受信し`AgentRuntime.set_shot()`へ反映するlive gateはbackend ownerが満たす。
   - 自動テスト方法: fake Roomでdisconnect→逆順packet→reconnect→rehydrateを再現し、state不変とdedupeを検証する。
   - 実機確認が必要か: 必須。機内モード/回線切替/Agent停止・復旧をrunbookで確認する。
   - fixture / live: 両方。

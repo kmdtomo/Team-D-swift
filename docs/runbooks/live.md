@@ -7,7 +7,10 @@ contains `backend.example.invalid` and `livekit.example.invalid`, and the app
 composition uses `UnavailableLiveRuntimeProvider`. The expected result is a
 visible live failure with no fixture fallback.
 
-The audited snapshot currently reports:
+The historical v1 audit reported the following matrix. Before live execution,
+inspect the latest remote default branch of `neko-jpg/Team-D`, record its exact
+commit and retrieval time, and confirm or replace every availability result in
+the live evidence. Do not treat this table as current backend truth:
 
 | Surface | Snapshot availability | Release gate |
 | --- | --- | --- |
@@ -19,9 +22,12 @@ The audited snapshot currently reports:
 | `POST /api/generate-background` | unavailable | deploy text-only handler and prove image fields are rejected |
 | `POST /api/remove-background` | unavailable | deploy front-only mask handler and validate mask-only PNG |
 
-Do not start acceptance execution until operations and the owning integration
-tasks have supplied every surface needed by the intended slice. A fixture run
-or an optional local service does not release this blocker.
+Do not start acceptance execution until the latest backend inspection,
+operations, and the owning integration tasks have supplied every surface
+needed by the intended slice. If that inspection reveals contract drift,
+synchronize the affected versioned contract, goldens, fixtures, requirements,
+and task scope before the Swift client consumes it. A fixture run or an
+optional local service does not release this blocker.
 
 ## Public app configuration
 
@@ -126,7 +132,8 @@ provider. Record that blocker; do not claim downstream steps.
 
 ## Evidence to record
 
-Record the Swift commit, backend source/release version, contract version,
+Record the Swift commit, exact inspected backend commit and retrieval time,
+backend release version, contract version,
 Xcode build, iPhone model/iOS, build configuration, public host labels, and
 timestamps. Record separate pass/fail/not-run results for health, token claims,
 Room join, camera subscribe/publish, guidance push, each HTTP provider,

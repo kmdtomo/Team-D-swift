@@ -7,30 +7,42 @@ the supported shared-live route. It exists only to isolate backend, Agent, and
 rembg behavior. It never turns a local or fixture result into shared-live
 evidence.
 
-Use the pinned `neko-jpg/Team-D` source as read-only input. Do not edit, branch,
-commit, or push that repository. Export its files to a disposable directory;
-do not copy Python backend, Agent, Web, OpenSpec, or rembg code into this Swift
-repository.
+Use the current remote default branch of `neko-jpg/Team-D` as read-only input.
+Fetch before each backend diagnosis and record the exact exported commit and
+retrieval time. Do not edit, branch, commit, or push that repository. Export
+its files to a disposable directory; do not copy Python backend, Agent, Web,
+OpenSpec, or rembg code into this Swift repository.
 
-At snapshot `44065d41e8906d34e5d8e11d7cd4cc14b25d17f2`, FastAPI exposes only health
-and token. Agent inference defaults to a no-op, guidance push and explicit
-1--2 fps sampling are missing, and the four provider endpoints are missing.
-The local commands below cannot run an end-to-end product flow.
+The v1 audit at `44065d41e8906d34e5d8e11d7cd4cc14b25d17f2` is historical evidence only.
+At that commit FastAPI exposed health and token while Agent guidance push,
+explicit 1--2 fps sampling, and the four provider endpoints were missing.
+Do not assume those availability facts are current; inspect the exported
+commit before deciding which local slices can run end to end.
 
 ## Export the read-only source
 
-Point `SOURCE_CHECKOUT` at an existing read-only clone and export the exact
-snapshot without changing its checkout:
+Point `SOURCE_CHECKOUT` at an existing clone, refresh its remote refs without
+changing its checkout, resolve the remote default branch, and export that
+exact commit:
 
 ```sh
 export SOURCE_CHECKOUT='/absolute/path/to/read-only/Team-D'
 export SOURCE_EXPORT="$(mktemp -d "${TMPDIR:-/tmp}/teamd-backend-export.XXXXXX")"
-git -C "$SOURCE_CHECKOUT" archive \
-  44065d41e8906d34e5d8e11d7cd4cc14b25d17f2 | tar -x -C "$SOURCE_EXPORT"
-test "$(git -C "$SOURCE_CHECKOUT" rev-parse 44065d41e8906d34e5d8e11d7cd4cc14b25d17f2)" = \
-  44065d41e8906d34e5d8e11d7cd4cc14b25d17f2
+git -C "$SOURCE_CHECKOUT" fetch --prune origin
+git -C "$SOURCE_CHECKOUT" remote set-head origin --auto
+export SOURCE_DEFAULT_REF="$(git -C "$SOURCE_CHECKOUT" symbolic-ref --quiet refs/remotes/origin/HEAD)"
+export SOURCE_COMMIT="$(git -C "$SOURCE_CHECKOUT" rev-parse "${SOURCE_DEFAULT_REF}^{commit}")"
+export SOURCE_RETRIEVED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+test -n "$SOURCE_DEFAULT_REF"
+test -n "$SOURCE_COMMIT"
+git -C "$SOURCE_CHECKOUT" archive "$SOURCE_COMMIT" | tar -x -C "$SOURCE_EXPORT"
+printf 'Backend source: %s at %s\n' "$SOURCE_COMMIT" "$SOURCE_RETRIEVED_AT"
 cd "$SOURCE_EXPORT"
 ```
+
+Copy the printed commit and retrieval time into the diagnosis evidence. Do not
+store the disposable export, credentials, tokens, or request images as
+evidence.
 
 Keep all environments, model caches, request inputs, and outputs inside this
 disposable export. The production backend lock is `requirements-backend.txt`;
@@ -54,34 +66,35 @@ curl --fail --silent --show-error --max-time 5 \
   http://127.0.0.1:8000/api/health
 ```
 
-The exact expected payload is `{"status":"ok"}`. The token route returns 503
-until the backend process receives its server-only LiveKit configuration from
-an approved local secret manager. This runbook deliberately provides no
+For a backend release that retains the current v1 health contract, the exact
+expected payload is `{"status":"ok"}`. The token route can return 503 until
+the backend process receives its server-only LiveKit configuration from an
+approved local secret manager. This runbook deliberately provides no
 credential assignment. Do not route an iPhone to loopback and do not place
 server credentials or tokens in the Swift app, scheme, xcconfig, log, or
 repository.
 
-The pinned FastAPI app does not expose analyze-shot, measurement-point,
-generate-background, or remove-background. A 404 from those paths is expected
-snapshot evidence, not a reason to invent a substitute handler.
+Compare the exported routes and payloads with the versioned Swift contract.
+A newly available or changed route is contract drift to record and synchronize,
+not permission to bypass strict client decoding. A still-missing route is an
+external live blocker, not a reason to invent a substitute handler.
 
 ## Optional Agent
 
 Only after server-only LiveKit configuration has been injected outside the
-repository, start the pinned worker from the disposable export:
+repository, start the exported worker from the disposable directory:
 
 ```sh
 .venv-backend/bin/python -m backend.live_agent dev
 ```
 
-This verifies worker startup and camera-only transport behavior at most. The
-pinned default inference is a no-op and does not publish usable guidance. Do
-not claim Agent push, 1--2 fps sampling, Room smoke, or live acceptance from
-process startup.
+Process startup alone does not prove usable guidance, 1--2 fps sampling, Room
+smoke, or live acceptance. Verify those behaviors separately at the recorded
+backend commit.
 
 ## Optional rembg
 
-This sidecar check is isolated from the iPhone and FastAPI snapshot. It does
+This sidecar check is isolated from the iPhone and exported FastAPI source. It does
 not make `/api/remove-background` available:
 
 ```sh

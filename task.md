@@ -441,6 +441,16 @@
   - 実機確認が必要か: 必須。印刷倍率と30枚の撮影条件を記録する。
   - fixture / live: fixtureを主に、実機corpusも使用する。
 
+### T11-01 進捗・ブロッカー記録（2026-08-31）
+
+- Verification:
+  - commit/build: `d588e48`, `3f64bb3`, `187cced`; corpus/docs/scripts only, product build not required
+  - automated: `python3 scripts/t11_01_measurement_corpus/lint_corpus.py` pass 18、`python3 -m unittest scripts/t11_01_measurement_corpus/test_lint_corpus.py` 3 pass、fresh temp generate+`--render-dir` lint pass、`python3 scripts/lint_t01_02.py` pass、PDF SHA-256 `4e5158506dbdf66623f281e8b9d7b01f7c23349beeefbf5682030d165b638217` + A4/1 page/no JavaScript
+  - fixture: 50/5/40mm marker + finite positive/negative + boundaries + dark/blur, deterministic pass
+  - live/device: blocked; physical core 0/30, ruler-confirmed 50.0mm not recorded; no substitution by fixture
+  - owner/release condition: physical device operator/user, rights/PII-cleared 30 distributed captures, complete CSV annotations + ruler/print-scale evidence; then review before checkbox
+  - limitations: T11-02/T11-03 remain blocked, no OpenCV adoption decision
+
 - [ ] **T11-02 Vision/Core Image/Accelerate/simdでmarker・輪郭・射影補正PoCを行う**
   - 担当する責務: レーンDが、OpenCVなしで二重正方形検出と安全なscale取得が可能か最初に検証する。
   - 依存する先行タスク: T11-01。

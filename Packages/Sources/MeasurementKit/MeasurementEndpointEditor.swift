@@ -127,12 +127,14 @@ public struct MeasurementImageCoordinateMapper: Equatable {
     }
 }
 
-/// Mutable, UI-owned endpoint state. This type intentionally has no approval operation:
-/// T13-02 owns validation, warnings, and the explicit approval transition.
+/// Mutable, UI-owned endpoint and explicit approval state.
 public struct MeasurementEndpointEditor: Equatable {
     public private(set) var endpoints: MeasurementGeometryEndpoints
     public private(set) var measurements: MeasurementGeometryResult
     public private(set) var status: MeasurementStatus
+
+    private var pendingRangeConfirmation: MeasurementRangeConfirmation?
+    private var approvedSnapshot: MeasurementApprovalSnapshot?
 
     public let imageSize: CorrectedMeasurementImageSize
     public let pixelsPerCentimeter: Double
@@ -152,6 +154,8 @@ public struct MeasurementEndpointEditor: Equatable {
         )
         // Every draft, including one reconstructed from an earlier result, starts pending.
         self.status = .needsReview
+        self.pendingRangeConfirmation = nil
+        self.approvedSnapshot = nil
     }
 
     public func point(for endpoint: MeasurementEndpoint) -> SessionNormalizedPoint {
@@ -166,11 +170,12 @@ public struct MeasurementEndpointEditor: Equatable {
     /// Stable VoiceOver value for an endpoint. It deliberately describes the pending
     /// measurement state rather than transient drag or zoom coordinates.
     public func accessibilityValue(for endpoint: MeasurementEndpoint) -> String {
+        let approval = status == .approvedCV ? "承認済み" : "承認待ち"
         switch endpoint {
         case .lengthStart, .lengthEnd:
-            "着丈 \(measurements.length.centimeters, format: .number.precision(.fractionLength(1))) cm、承認待ち"
+            "着丈 \(measurements.length.centimeters, format: .number.precision(.fractionLength(1))) cm、\(approval)"
         case .widthStart, .widthEnd:
-            "身幅 \(measurements.width.centimeters, format: .number.precision(.fractionLength(1))) cm、承認待ち"
+            "身幅 \(measurements.width.centimeters, format: .number.precision(.fractionLength(1))) cm、\(approval)"
         }
     }
 
@@ -187,7 +192,7 @@ public struct MeasurementEndpointEditor: Equatable {
         )
         endpoints = updated
         measurements = recalculated
-        status = .needsReview
+        invalidateApproval()
         return recalculated
     }
 
@@ -226,6 +231,124 @@ public struct MeasurementEndpointEditor: Equatable {
             )
         }
         return try update(endpoint, to: updated)
+    }
+
+    /// The first explicit approval operation. In-range values approve immediately;
+    /// out-of-range values produce a confirmation bound to the current lines and values.
+    @discardableResult
+    public mutating func requestCVApproval(
+        garmentPolygon: CorrectedMeasurementGarmentPolygon
+    ) -> MeasurementCVApprovalOutcome {
+        let validation = MeasurementEndpointValidator.validate(
+            endpoints: endpoints,
+            imageSize: imageSize,
+            garmentPolygon: garmentPolygon
+        )
+        guard validation.isValid else {
+            invalidateApproval()
+            return .blocked(
+                failure: .endpointsInvalid,
+                invalidEndpoints: validation.invalidEndpoints
+            )
+        }
+
+        let snapshot = approvalSnapshot(garmentPolygon: garmentPolygon)
+        if status == .approvedCV, approvedSnapshot == snapshot {
+            return .alreadyApproved
+        }
+
+        status = .needsReview
+        approvedSnapshot = nil
+        let warning = MeasurementRangeWarning(measurements: measurements)
+        guard warning.requiresConfirmation else {
+            pendingRangeConfirmation = nil
+            return approve(snapshot: snapshot)
+        }
+
+        let confirmation = MeasurementRangeConfirmation(
+            warning: warning,
+            snapshot: snapshot
+        )
+        pendingRangeConfirmation = confirmation
+        return .requiresRangeConfirmation(confirmation)
+    }
+
+    /// The second explicit operation for a warning value. A token issued before
+    /// an edit, cancellation, or contour change cannot approve the current draft.
+    @discardableResult
+    public mutating func confirmCVApproval(
+        _ confirmation: MeasurementRangeConfirmation,
+        garmentPolygon: CorrectedMeasurementGarmentPolygon
+    ) -> MeasurementCVApprovalOutcome {
+        guard pendingRangeConfirmation == confirmation else {
+            return .staleConfirmation
+        }
+
+        let currentSnapshot = approvalSnapshot(garmentPolygon: garmentPolygon)
+        guard confirmation.snapshot == currentSnapshot else {
+            invalidateApproval()
+            return .staleConfirmation
+        }
+
+        let validation = MeasurementEndpointValidator.validate(
+            endpoints: endpoints,
+            imageSize: imageSize,
+            garmentPolygon: garmentPolygon
+        )
+        guard validation.isValid else {
+            invalidateApproval()
+            return .blocked(
+                failure: .endpointsInvalid,
+                invalidEndpoints: validation.invalidEndpoints
+            )
+        }
+
+        let currentWarning = MeasurementRangeWarning(measurements: measurements)
+        guard currentWarning.requiresConfirmation,
+              currentWarning == confirmation.warning else {
+            invalidateApproval()
+            return .staleConfirmation
+        }
+        pendingRangeConfirmation = nil
+        return approve(snapshot: currentSnapshot)
+    }
+
+    /// Cancels only the matching visible warning. A stale dialog cannot clear a
+    /// newer confirmation.
+    @discardableResult
+    public mutating func cancelCVApproval(
+        _ confirmation: MeasurementRangeConfirmation
+    ) -> Bool {
+        guard pendingRangeConfirmation == confirmation else { return false }
+        invalidateApproval()
+        return true
+    }
+
+    private mutating func approve(
+        snapshot: MeasurementApprovalSnapshot
+    ) -> MeasurementCVApprovalOutcome {
+        status = .approvedCV
+        approvedSnapshot = snapshot
+        pendingRangeConfirmation = nil
+        return .approved(event: .approveMeasurementCV)
+    }
+
+    private mutating func invalidateApproval() {
+        status = .needsReview
+        pendingRangeConfirmation = nil
+        approvedSnapshot = nil
+    }
+
+    private func approvalSnapshot(
+        garmentPolygon: CorrectedMeasurementGarmentPolygon
+    ) -> MeasurementApprovalSnapshot {
+        MeasurementApprovalSnapshot(
+            endpoints: endpoints,
+            measurements: measurements,
+            imageSize: imageSize,
+            pixelsPerCentimeter: pixelsPerCentimeter,
+            garmentPolygon: garmentPolygon.points
+        )
     }
 
     private func replacing(

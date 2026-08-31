@@ -33,13 +33,15 @@ The priority order is the user's latest explicit instruction, `requirements.md`,
 
 ## Work selection and progress
 
-- Identify the `task.md` task ID and lane before changing files. Follow `Depends on` fields, not chapter order; T11 is the early measurement M0 gate.
+- Identify the `task.md` task ID and lane before changing files. Treat listed predecessors as integration/acceptance dependencies unless a missing concrete artifact or decision makes them a hard start dependency; T11 remains the early measurement M0 decision gate.
+- Never use an unchecked predecessor by itself as a reason to wait. Start separable fixture/mock work when the required versioned contract, protocol, finite type, fixture, golden payload, fake, expected image, or approved technical decision is stable. Record the specific missing artifact and release condition when work truly cannot start.
+- At slice start, record the task/lane, referenced artifact and version, owned files, focused test/build, and unresolved integration, live, device, and acceptance gates so another worker can safely build on the result.
 - Keep a change to one task ID and one lane when practical. Agree on protocols and schemas before crossing lane boundaries.
 - Lane A owns shared project files such as `project.pbxproj`, shared schemes, package lockfiles, contract schemas, and root navigation. Avoid unrelated formatting or dependency updates.
-- Treat `[ ]` as incomplete, in progress, or blocked. Change it to `[x]` only after every listed completion condition, automated test, fixture/live check, and required physical-device check passes.
+- Track work as `planned`, `in_progress`, `implementation_ready`, `integration_ready`, `accepted`, or `blocked`. Treat `[ ]` as any state except `accepted`; it is not a start gate. Change it to `[x]` only after every listed completion condition, automated test, fixture/live check, and required physical-device check passes.
 - A source-Web completion, Simulator pass, mock Room, fake camera, or fixture pass does not satisfy a required Swift live or physical-device gate.
-- If an external backend, credential, device, or contract is unavailable, leave the task unchecked and record the blocker, owner, and release condition. Do not fabricate a substitute implementation.
-- When multiple lanes can proceed independently and delegation is available and authorized, delegate bounded audits or tests. Do not let parallel workers edit the same shared file.
+- If an external backend, credential, or device is unavailable, continue any separable fixture/mock implementation, leave integration/acceptance unchecked, and record the blocker, owner, and release condition. An unavailable required contract or unresolved product meaning can block the dependent implementation; do not fabricate either one.
+- When multiple lanes can proceed independently and delegation is available and authorized, keep non-conflicting lanes active with bounded tasks. Prefer one task ID and lane per worker in a dedicated branch/worktree; do not let parallel workers edit the same shared file or `task.md`.
 
 ## Implementation rules
 
@@ -54,10 +56,11 @@ The priority order is the user's latest explicit instruction, `requirements.md`,
 
 ## Verification
 
-- Add or update the focused automated test in the same change as production behavior.
+- Build the affected target and add or update the focused automated test in the same change as production behavior.
 - Use deterministic fixture clocks, IDs, responses, and images. Include success, failure, timeout, stale-event, invalid-schema, interruption, and cancellation paths relevant to the task.
 - Verify fixture and live separately when a task says both. A live test must fail visibly if live infrastructure fails.
-- Run the narrowest relevant tests first, then the affected package/app suite. Run XCUITest for user-visible flow changes.
+- Run the narrowest relevant tests for each change. Run the affected package/app suite once per integration wave, full XCUITest at runnable user-flow milestones or T17/T19, and clean-clone, long-running performance, device-matrix, and live end-to-end checks only at their specified milestones or when a broad shared change invalidates prior evidence.
+- Do not repeat unchanged full suites, full XCUITest, clean clones, or long physical-device runs for every small task or commit. This scheduling rule changes when evidence is collected, not which final evidence is required.
 - Camera authorization, actual capture, orientation, interruption recovery, LiveKit camera publish, thermal/performance behavior, measurement accuracy, VoiceOver camera operation, and photo export require the physical-device evidence specified in `task.md`.
 - Before completion, check that captured source pixels contain no guide/UI overlay, approved garment RGB provenance is preserved, session cleanup occurs, and secrets/user images are absent from logs and artifacts.
 - Record completion evidence under the task when completing the work: commit/build, test command and result, separate fixture and live configuration/result/artifact entries, device/iOS/checks/runbook or `not required`, backend version, and any remaining limitation.

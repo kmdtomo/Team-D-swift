@@ -12,7 +12,7 @@ Design the interface as a calm camera coach: keep the live garment visible, pres
 1. Read `requirements.md`, especially R1-R9 and the affected acceptance IDs.
 2. Read the relevant `task.md` tasks, fixture/live mode, and physical-device gate.
 3. For a design or implementation review, also read [references/review-checklist.md](references/review-checklist.md).
-4. For implementation, refactoring, or task completion, also use the delivery skill and enforce every predecessor before changing code.
+4. For implementation, refactoring, or task completion, also use the delivery skill. Use artifact readiness for start decisions; do not wait for every predecessor to be accepted when the required design contract, fixture state, protocol, or fake is stable.
 
 Do not change product behavior inside a design task. If a design requires a new flow, permission, persistence rule, fallback, or contract, route it through the product-requirements workflow first.
 

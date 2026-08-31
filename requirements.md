@@ -7,7 +7,7 @@
 ## 0. 文書の位置づけ
 
 - 本文書はSwift/iPhone版の機能要件、非機能要件、受け入れ条件の正本である。
-- [`task.md`](./task.md)は「どの順序で、どの依存を満たして実装するか」を定義する。本文書の要件を上書きしない。
+- [`task.md`](./task.md)は作業レーン、着手に必要な成果物、統合・最終受け入れの依存を定義する。チェックボックスは最終受け入れ状態だけを表し、後続タスクの一律な着手許可には使わない。本文書の要件を上書きしない。
 - 参照元の`requirements.md`、`architecture.md`、OpenSpecは調査根拠であり、SwiftリポジトリにコピーしたりOpenSpec運用を導入したりしない。
 - 参照元の`main`が更新されても自動同期しない。要件、API契約、fixture、backend availabilityの差分を確認し、利用者の明示的な承認後にsnapshotと本文書を更新する。
 - 矛盾がある場合は、利用者の最新の明示指示、本文書、version固定済みwire contract、`task.md`の順に優先し、独断で機能要件を変えない。
@@ -198,8 +198,20 @@
 ### NFR-3. テストと証跡
 
 - domain/geometry/codecはSwift TestingまたはXCTest、統合はXCTest、主要ユーザーフローはXCUITestで検証する。
+- 各production変更では、対象targetのbuildと、その変更を直接検証する最小のunit/contract/snapshot testを同じ変更内で実行する。影響packageの全testは統合waveごと、全XCUITestはユーザーフローの縦スライスまたはT17/T19の節目、clean clone・長時間性能・実機matrix・live end-to-endは該当Milestoneと最終受け入れで実行する。
+- 同じ未変更範囲の全suite、全XCUITest、clean clone、長時間実機試験を各小タスクや各commitで重複実行しない。契約、共有project設定、依存version、状態遷移、画像処理式などの変更で影響範囲が広がった場合だけ、必要な層まで前倒しして再実行する。
 - `fixture/live: 両方`は独立した2つの合格を意味し、fixture成功をlive成功の代用にしない。
 - カラー、レイアウト、撮影、回転、LiveKit publish、熱、採寸精度、保存は`task.md`で指定した実機gateを満たす。
+
+### NFR-4. 開発進行と並行性
+
+- `task.md`の`[x]`は、列挙された完了条件、自動テスト、fixture/live、実機確認をすべて満たした**最終受け入れ済み**だけを表す。`[ ]`は未着手、進行中、実装準備済み、統合待ち、外部block中を含み、`[ ]`であること自体を後続タスクの着手禁止理由にしない。
+- 後続タスクは、必要なversion付き契約、有限型、protocol、fixture、golden payload、mock/fake、画像期待値、または技術判断が利用可能で安定していれば、先行タスクが未受け入れでも分離可能な実装とfocused testへ着手できる。先行タスクIDだけを理由に待機せず、欠けている具体的な成果物または未決定事項を示す。
+- 依存は「着手依存」「統合依存」「受け入れ依存」に分ける。未確定のwire意味、共有schema/protocol、同一fileの並行owner、未承認の不可逆な技術判断、未解決の機能要件だけを着手blockerとする。実機、credential、共有backend、live環境の不在は、分離可能なfixture/mock実装を止めず、該当する統合または最終受け入れだけをblockする。
+- 作業状態は少なくとも`planned`、`in_progress`、`implementation_ready`、`integration_ready`、`accepted`、`blocked`を区別する。`implementation_ready`はfocused testを通した分離実装、`integration_ready`は必要な他レーンとの接続確認済み、`accepted`だけが`[x]`に対応する。
+- 各並列sliceは開始時に、参照するartifactとversion、所有file、focused test、まだ満たしていない統合・live・実機・受け入れgateを記録する。部分成果を`[x]`にせず、後続workerが再調査や重複検証なしで利用できる状態にする。
+- 並列実行が許可され利用可能な場合、親AIは競合しないレーンを空けたまま直列待機せず、安定した契約面を先に固定して複数のbounded taskを並行委譲する。各workerは原則1タスクID・1レーン・専用branch/worktreeを所有し、`project.pbxproj`、共有scheme、package lock、契約schema、root navigation、`task.md`の更新は単独integration ownerが直列に扱う。
+- 50mmマーカーのApple標準framework採用判断、live経路の成功、カメラ実機挙動、採寸精度、元RGB由来、privacy、明示承認、保存の最終gateは省略・緩和しない。並行化は着手と実装の待ち時間を減らすためのもので、fixtureをlive、Simulatorを実機、部分実装を最終受け入れとして扱うものではない。
 
 ## 9. 非対象・移植禁止
 

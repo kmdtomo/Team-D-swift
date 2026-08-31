@@ -64,10 +64,29 @@
 
 ## 依存関係の読み方
 
-- タスクIDは参照用であり、実行順は`依存する先行タスク`、Milestone M0、末尾のクリティカルパスで決める。依存を満たせば異なる章を並行実行できる。
+- `[x]`は最終受け入れ済みを示すだけで、後続タスクの一律な着手条件ではない。`[ ]`の先行タスクがあっても、後続が必要とする契約、protocol、有限型、fixture、golden、mock/fake、画像期待値、または技術判断が安定していれば、競合しない実装とfocused testへ着手してよい。
+- `依存する先行タスク`は、特記がなければ**統合依存または受け入れ依存**を表す。着手を止める場合は、タスクIDではなく「未確定のwire意味」「必要protocol未提供」「同一fileのactive owner」「未承認の不可逆な技術判断」「未解決の機能要件」のように、欠けている成果物・決定と解除条件を記録する。
+- 実機、credential、共有backend、live環境の不在は、分離可能なfixture/mock実装を止めない。たとえばT05の実機証跡を待つ間もfake camera上のT06、未提供HTTP endpointを待つ間も凍結schema/golden上のT09/T12/T14、live mask生成を待つ間も既知mask/背景上のT15/T16を進められる。ただし該当する統合、live、実機、最終受け入れは未完了のままにする。
+- T11-02は既知cornerを持つfixture corpusで検出器・計測器の分離実装を始められるが、Apple標準framework採否の判断とT11の受け入れにはT11-01の物理corpusと実測証跡を必須とする。
 - 章番号は要求された成果物構成であり、実行順そのものではない。**T11-01〜T11-03はT02/T03直後に実行する最初の技術検証Milestone M0**とし、Apple標準frameworkの採寸可否をfeature実装より先に判定する。
 - `fixture / live`は、そのタスクの確認モードを表す。`両方`はfixtureとliveを別々に合格させる意味であり、自動fallbackを意味しない。
 - 自動テストだけでカメラ関連を完了扱いにしない。`実機確認: 必須`のタスクは、runbookの証跡を残して初めて完了する。
+
+### 作業状態とテスト実行単位
+
+| 状態 | 意味 | checkbox |
+|---|---|---|
+| `planned` | 未着手 | `[ ]` |
+| `in_progress` | ownerが実装・focused testを進行中 | `[ ]` |
+| `implementation_ready` | 分離実装とfocused testは完了し、統合・live・実機証跡を待つ | `[ ]` |
+| `integration_ready` | 必要な他レーンとの接続確認まで完了し、残る受け入れgateを待つ | `[ ]` |
+| `accepted` | 全完了条件と必要なfixture/live/実機証跡が揃った | `[x]` |
+| `blocked` | 欠けている具体的成果物、owner、解除条件を記録済み | `[ ]` |
+
+- 各並列sliceは開始時にtask ID・lane・参照artifact/version・所有file・focused test・未統合gateを明示する。各production変更では対象targetをbuildし、変更箇所を直接検証する最小のunit/contract/snapshot testを同じ変更で通す。
+- 影響packageの全suiteは複数タスクを統合するwaveごと、全XCUITestは動作可能な縦スライスまたはT17/T19、clean clone・長時間性能・実機matrix・live end-to-endは該当Milestoneと最終受け入れで実行する。
+- 同じ未変更範囲への全suite、全XCUITest、clean clone、長時間実機試験を各小タスク・各commitで繰り返さない。契約、共有project設定、依存version、状態遷移、画像処理式を変更した場合は、影響する層だけ前倒しして広げる。
+- 並列workerは原則1タスクID・1レーン・専用branch/worktreeを使い、production変更とfocused testを1〜2個の意味あるcommit（必要時のみ最大3個）にまとめる。workerは`task.md`や共有project fileを更新せず、integration ownerが競合確認、wave test、証跡、checkboxを直列に統合する。
 
 ## 1. 既存資産の棚卸しと移行境界
 
@@ -715,6 +734,8 @@
 
 ## クリティカルパス
 
+次の矢印は統合・最終受け入れの順序を表し、各章を`[x]`にするまで後続の分離実装を禁止する直列スケジュールではない。着手可否は上記の成果物ready条件で判断する。
+
 ```text
 T01 棚卸し
 → T02 scaffold
@@ -735,10 +756,11 @@ T01 棚卸し
 
 ## 並行実行可能なまとまり
 
-- T02完了後、T11の採寸PoCを最初に開始する。同時にレーンA/CのT03契約、レーンFのfixture provenance作業を並行できる。T03-01完了後はT04、T04開始後はT05基盤も並行する。
-- T05-01後、T06のガイド/UI、T07のローカル品質、T08-01のLiveKit camera spikeを別packageで並行できる。
-- T03-02後、T09撮影後判定client、T12-02測定点client、T14 mask/background clientをレーンC内で担当分割できる。ただし実際の呼出gateはT10/T13完了まで開けない。
-- T11の採寸PoC中に、レーンEは既知mask/固定背景でT15/T16のfixture実装を進められる。
+- 親AIは各レーンのactive ownerと共有file ownershipを確認し、利用可能なworker枠へ成果物readyなbounded taskを継続的に割り当てる。未受け入れの先行タスクがあっても、必要artifactが揃いfile競合がなければ`implementation_ready`まで進める。
+- T02のpackage/target境界とfixture build基盤が利用可能になったら、T11の採寸PoCを開始する。同時にレーンA/CのT03契約、レーンFのfixture provenance作業を並行できる。有限状態とevent contractが安定した時点でT04、capture session protocolの所有境界が合意できた時点でT05基盤も並行する。
+- capture frame/photo protocolとfake cameraが利用可能になったら、T05の実機受け入れを待たず、T06のガイド/UI、T07のローカル品質、T08-01のLiveKit camera spikeを別packageで並行できる。
+- version付きHTTP schemaとgolden payloadが確定したら、live endpointの提供を待たず、T09撮影後判定client、T12-02測定点client、T14 mask/background clientをレーンC内で担当分割できる。ただし実際の呼出gateはT10/T13完了まで開けず、live受け入れは共有backend提供後に行う。
+- 既知mask・既知背景・合成期待値fixtureが利用可能なら、T11/T14のlive受け入れ中でもレーンEはT15/T16のfixture実装を進められる。
 - T17のunit/contract/UI testは各feature ownerがproduction taskと同時に追加し、レーンFが共通fixtureと最終suiteを統合する。
 
 ## 最初の実機縦スライスの完了条件

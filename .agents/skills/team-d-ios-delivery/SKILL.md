@@ -10,12 +10,14 @@ Advance the Swift client in small, verifiable task units without confusing parti
 ## Start a work unit
 
 1. Read root `AGENTS.md`, `requirements.md`, and the relevant `task.md` section.
-2. Name the task ID, lane, dependencies, implementation target, required test mode, and device gate.
-3. Confirm every predecessor marked in the task is actually complete. Chapter order is not execution order; run the T11 Apple-framework measurement M0 immediately after its stated prerequisites.
+2. Name the task ID, lane, dependencies, implementation target, required test mode, and device gate. Record the upstream artifact/version being used, owned files, and any integration, live, device, or acceptance gates intentionally left open.
+3. Classify each predecessor as a start, integration, or acceptance dependency. An unchecked predecessor is not itself a start blocker: continue separable work when the required contract, protocol, finite type, fixture, golden payload, fake, expected image, or approved technical decision is stable. Run the T11 Apple-framework measurement M0 early, while keeping its physical-corpus evidence mandatory for the adoption decision.
 4. Inspect the current worktree and preserve user or parallel-agent changes.
 5. Identify the smallest production change and its focused automated evidence before editing.
 
 If the request would change user-visible behavior, API semantics, persistence, privacy, fallback, accuracy, or approval, use the product-requirements skill first. If an external backend contract is missing, continue only the explicitly separable fixture/client work and leave live completion blocked.
+
+Block the start of dependent implementation only for a concrete missing artifact or decision: unresolved wire or product meaning, unavailable shared protocol/schema, an active owner on the same file, or an unapproved irreversible technology gate. Device, credential, shared-backend, and live-environment availability normally block integration or acceptance, not fixture/mock implementation.
 
 ## Implement within the lane
 
@@ -29,7 +31,7 @@ If the request would change user-visible behavior, API semantics, persistence, p
 
 ## Verify in layers
 
-Run the least expensive meaningful layer first, then broaden according to risk:
+Run the least expensive meaningful layer first, then broaden according to risk and the integration cadence:
 
 1. Swift Testing/XCTest for domain state, codecs, geometry, image math, cancellation, and failure behavior.
 2. Contract/golden tests for API and fixture changes.
@@ -37,13 +39,15 @@ Run the least expensive meaningful layer first, then broaden according to risk:
 4. XCUITest for user-visible flow, recovery, and approval.
 5. Physical-device checks required by the task.
 
+Build the affected target and run focused tests with each production change. Run affected package/app suites once per integration wave, full XCUITest at runnable vertical slices or T17/T19, and clean-clone, long performance, device-matrix, and live end-to-end checks at their named milestones or after a broad shared change invalidates prior evidence. Do not repeat unchanged heavy layers for every small task or commit.
+
 Fixture and live are independent results. A fake camera or mock Room cannot satisfy physical capture or live publish. A Simulator pass cannot satisfy camera, orientation, interruption, thermal, measurement accuracy, VoiceOver camera operation, or export gates.
 
 For live failures, verify that the app remains in live mode, displays the failure, preserves progress, and never invokes fixture providers. For asynchronous work, verify old session/shot/sequence/request results cannot mutate current state.
 
 ## Complete or block honestly
 
-Leave a task unchecked when it is partial, in progress, blocked, fixture-only where live is required, Simulator-only where a device is required, or missing any listed completion criterion.
+Use `planned`, `in_progress`, `implementation_ready`, `integration_ready`, `accepted`, and `blocked` to distinguish progress. Leave a task unchecked in every state except `accepted`; unchecked status does not prevent downstream separable work.
 
 Mark `[x]` only after all of the task's completion conditions, automated tests, fixture/live checks, and device checks pass. Record evidence beneath the task in this form:
 

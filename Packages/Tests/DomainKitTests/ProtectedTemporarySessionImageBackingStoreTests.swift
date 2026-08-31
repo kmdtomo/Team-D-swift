@@ -205,6 +205,45 @@ import Testing
     }
 }
 
+@Test func protectedTemporaryStorePostWriteFailureIsQuarantinedForEveryCleanupPath() async throws {
+    let failures = RemovalFailureController()
+    let fixture = try TemporaryStoreFixture(removalFailures: failures)
+    let store = try fixture.makeStore()
+    let discardHandle = try fixture.handle(session: "quarantine", lifecycle: 1, request: "discard", image: "discard", version: 1)
+    let discardAllHandle = try fixture.handle(session: "quarantine", lifecycle: 1, request: "discard-all", image: "discard-all", version: 2)
+    let cleanupHandle = try fixture.handle(session: "quarantine", lifecycle: 1, request: "cleanup", image: "cleanup", version: 3)
+
+    failures.failNextMetadataUpdate()
+    failures.failNextRemoval()
+    await #expect(throws: InjectedRemovalError.failed) {
+        try await store.store(Data([1]), handle: discardHandle)
+    }
+    #expect(await store.load(handle: discardHandle) == nil)
+    #expect(try fixture.fileURL(lifecycle: 1, operation: 1).checkResourceIsReachable())
+    try await store.discard(handle: discardHandle)
+    #expect((try? fixture.fileURL(lifecycle: 1, operation: 1).checkResourceIsReachable()) != true)
+
+    failures.failNextMetadataUpdate()
+    failures.failNextRemoval()
+    await #expect(throws: InjectedRemovalError.failed) {
+        try await store.store(Data([2]), handle: discardAllHandle)
+    }
+    #expect(await store.load(handle: discardAllHandle) == nil)
+    #expect(try fixture.fileURL(lifecycle: 1, operation: 2).checkResourceIsReachable())
+    try await store.discardAll(namespace: discardAllHandle.namespace)
+    #expect((try? fixture.fileURL(lifecycle: 1, operation: 2).checkResourceIsReachable()) != true)
+
+    failures.failNextMetadataUpdate()
+    failures.failNextRemoval()
+    await #expect(throws: InjectedRemovalError.failed) {
+        try await store.store(Data([3]), handle: cleanupHandle)
+    }
+    #expect(await store.load(handle: cleanupHandle) == nil)
+    #expect(try fixture.fileURL(lifecycle: 1, operation: 3).checkResourceIsReachable())
+    try await store.cleanup()
+    #expect(!fixture.ownedDirectoryExists)
+}
+
 private struct FixedFilenameStrategy: ProtectedTemporarySessionFilenameStrategy {
     let value: String
     init(_ value: String) { self.value = value }
@@ -218,10 +257,17 @@ private enum InjectedRemovalError: Error {
 private final class RemovalFailureController: @unchecked Sendable {
     private let failureLock = NSLock()
     private var shouldFailNextRemoval = false
+    private var shouldFailNextMetadataUpdate = false
 
     func failNextRemoval() {
         failureLock.lock()
         shouldFailNextRemoval = true
+        failureLock.unlock()
+    }
+
+    func failNextMetadataUpdate() {
+        failureLock.lock()
+        shouldFailNextMetadataUpdate = true
         failureLock.unlock()
     }
 
@@ -232,6 +278,18 @@ private final class RemovalFailureController: @unchecked Sendable {
         failureLock.unlock()
         if shouldFail { throw InjectedRemovalError.failed }
     }
+
+    func interceptMetadataUpdate(at _: URL) throws {
+        failureLock.lock()
+        let shouldFail = shouldFailNextMetadataUpdate
+        shouldFailNextMetadataUpdate = false
+        failureLock.unlock()
+        if shouldFail { throw InjectedMetadataError.failed }
+    }
+}
+
+private enum InjectedMetadataError: Error {
+    case failed
 }
 
 private final class TemporaryStoreFixture {
@@ -262,6 +320,7 @@ private final class TemporaryStoreFixture {
             return try ProtectedTemporarySessionImageBackingStore(
                 temporaryContainerURL: containerURL,
                 filenameStrategy: filenameStrategy,
+                postWriteMetadataInterceptor: removalFailures.interceptMetadataUpdate(at:),
                 deletionInterceptor: removalFailures.interceptRemoval(at:)
             )
         }

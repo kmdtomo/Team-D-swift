@@ -44,7 +44,9 @@ public actor ProtectedTemporarySessionImageBackingStore: SessionImageBackingStor
 
     private let ownedDirectory: OwnedTemporaryDirectoryCleanup
     private let filenameStrategy: any ProtectedTemporarySessionFilenameStrategy
+    private let postWriteMetadataInterceptor: (@Sendable (URL) throws -> Void)?
     private var urls: [SessionImageHandle: URL] = [:]
+    private var cleanupOnlyURLs: [SessionImageHandle: Set<URL>] = [:]
     private var cleanedUp = false
 
     public init(
@@ -58,6 +60,7 @@ public actor ProtectedTemporarySessionImageBackingStore: SessionImageBackingStor
             deletionInterceptor: nil
         )
         self.filenameStrategy = filenameStrategy
+        self.postWriteMetadataInterceptor = nil
     }
 
     /// Internal fault-injection boundary used to verify retryable deletion.
@@ -65,6 +68,7 @@ public actor ProtectedTemporarySessionImageBackingStore: SessionImageBackingStor
     init(
         temporaryContainerURL: URL,
         filenameStrategy: any ProtectedTemporarySessionFilenameStrategy = NumericSessionImageFilenameStrategy(),
+        postWriteMetadataInterceptor: @escaping @Sendable (URL) throws -> Void,
         deletionInterceptor: @escaping @Sendable (URL) throws -> Void
     ) throws {
         self.ownedDirectory = try Self.prepareOwnedDirectory(
@@ -73,6 +77,7 @@ public actor ProtectedTemporarySessionImageBackingStore: SessionImageBackingStor
             deletionInterceptor: deletionInterceptor
         )
         self.filenameStrategy = filenameStrategy
+        self.postWriteMetadataInterceptor = postWriteMetadataInterceptor
     }
 
     private static func prepareOwnedDirectory(
@@ -120,30 +125,42 @@ public actor ProtectedTemporarySessionImageBackingStore: SessionImageBackingStor
         let previousURL = urls[handle]
         try bytes.write(to: url, options: protectedAtomicWriteOptions)
         do {
+            try postWriteMetadataInterceptor?(url)
             try ownedDirectory.excludeFromBackup(url)
             try ownedDirectory.applyFileProtection(to: url)
-            if let previousURL, previousURL != url {
-                try? ownedDirectory.removeFile(at: previousURL)
-            }
-            urls[handle] = url
-        } catch {
-            // A replacement that cannot be protected must not remain readable.
-            urls[handle] = nil
-            try? ownedDirectory.removeFile(at: url)
-            if let previousURL, previousURL != url {
-                try? ownedDirectory.removeFile(at: previousURL)
-            }
-            throw error
+        } catch let metadataError {
+            // Once metadata/protection fails, bytes at this URL are never
+            // loadable. Register cleanup ownership before attempting deletion
+            // so a deletion failure remains observable and retryable.
+            try quarantineAndDelete(url, for: handle)
+            throw metadataError
         }
+
+        if let previousURL, previousURL != url {
+            do {
+                try ownedDirectory.removeFileIfPresent(at: previousURL)
+            } catch let replacementError {
+                // The new URL is protected but the replacement is not committed
+                // while the previous mapping could not be retired.
+                try quarantineAndDelete(url, for: handle)
+                throw replacementError
+            }
+        }
+        urls[handle] = url
     }
 
     /// Deletes one artifact and only forgets its mapping after deletion succeeds.
     /// A filesystem error is therefore observable and the same handle remains
     /// available for an explicit retry.
     public func discard(handle: SessionImageHandle) async throws {
-        guard let url = urls[handle] else { return }
-        try ownedDirectory.removeFileIfPresent(at: url)
-        urls[handle] = nil
+        for url in (cleanupOnlyURLs[handle] ?? []).sorted(by: { $0.path < $1.path }) {
+            try ownedDirectory.removeFileIfPresent(at: url)
+            removeCleanupOnlyURL(url, for: handle)
+        }
+        if let url = urls[handle] {
+            try ownedDirectory.removeFileIfPresent(at: url)
+            urls[handle] = nil
+        }
     }
 
     public func load(handle: SessionImageHandle) async -> Data? {
@@ -154,7 +171,8 @@ public actor ProtectedTemporarySessionImageBackingStore: SessionImageBackingStor
     /// Deletes all artifacts in exactly one lifecycle namespace. Failed and
     /// not-yet-attempted mappings remain registered so cleanup can be retried.
     public func discardAll(namespace: SessionStorageNamespace) async throws {
-        let matching = urls.keys.filter { $0.namespace == namespace }
+        let matching = Set(urls.keys.filter { $0.namespace == namespace })
+            .union(cleanupOnlyURLs.keys.filter { $0.namespace == namespace })
         for handle in matching { try await discard(handle: handle) }
     }
 
@@ -163,7 +181,20 @@ public actor ProtectedTemporarySessionImageBackingStore: SessionImageBackingStor
     public func cleanup() async throws {
         try ownedDirectory.removeOwnedDirectoryIfPresent()
         urls.removeAll()
+        cleanupOnlyURLs.removeAll()
         cleanedUp = true
+    }
+
+    private func quarantineAndDelete(_ url: URL, for handle: SessionImageHandle) throws {
+        if urls[handle] == url { urls[handle] = nil }
+        cleanupOnlyURLs[handle, default: []].insert(url)
+        try ownedDirectory.removeFileIfPresent(at: url)
+        removeCleanupOnlyURL(url, for: handle)
+    }
+
+    private func removeCleanupOnlyURL(_ url: URL, for handle: SessionImageHandle) {
+        cleanupOnlyURLs[handle]?.remove(url)
+        if cleanupOnlyURLs[handle]?.isEmpty == true { cleanupOnlyURLs[handle] = nil }
     }
 
     private func fileURL(for handle: SessionImageHandle) throws -> URL {

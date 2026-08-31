@@ -65,7 +65,8 @@ public struct MeasurementEndpointEditorOverlay: View {
             .simultaneousGesture(magnificationGesture)
             .accessibilityElement(children: .contain)
             .accessibilityLabel("採寸端点エディタ")
-            .accessibilityHint("端点をドラッグするか、VoiceOverの上下スワイプで微調整できます。採寸は未承認です。")
+            .accessibilityValue("着丈 \(editor.measurements.length.centimeters, format: .number.precision(.fractionLength(1))) cm、身幅 \(editor.measurements.width.centimeters, format: .number.precision(.fractionLength(1))) cm、承認待ち")
+            .accessibilityHint("各端点をドラッグするか、VoiceOverの上下スワイプで測定線に沿って微調整できます。変更後は承認待ちです。")
         }
     }
 
@@ -122,7 +123,7 @@ public struct MeasurementEndpointEditorOverlay: View {
         )
         .accessibilityLabel(endpoint.accessibilityLabel)
         .accessibilityValue(measurementValue(for: endpoint))
-        .accessibilityHint("上下スワイプで0.1cm未満ずつ調整します。採寸は未承認です。")
+        .accessibilityHint("\(endpoint.accessibilityAdjustmentHint) 変更後は承認待ちです。")
         .accessibilityAdjustableAction { direction in
             let adjustment: MeasurementEndpointAccessibilityAdjustment = direction == .increment ? .increment : .decrement
             try? editor.adjust(endpoint, by: adjustment)
@@ -130,12 +131,7 @@ public struct MeasurementEndpointEditorOverlay: View {
     }
 
     private func measurementValue(for endpoint: MeasurementEndpoint) -> String {
-        switch endpoint {
-        case .lengthStart, .lengthEnd:
-            "着丈 \(editor.measurements.length.centimeters, format: .number.precision(.fractionLength(1))) cm、未承認"
-        case .widthStart, .widthEnd:
-            "身幅 \(editor.measurements.width.centimeters, format: .number.precision(.fractionLength(1))) cm、未承認"
-        }
+        editor.accessibilityValue(for: endpoint)
     }
 
     private func midpoint(_ first: CGPoint, _ second: CGPoint) -> CGPoint {

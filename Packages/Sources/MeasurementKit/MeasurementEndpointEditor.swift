@@ -1,5 +1,6 @@
 import CoreGraphics
 import DomainKit
+import Foundation
 
 /// The four semantic points a person can correct on the rectified measurement image.
 public enum MeasurementEndpoint: CaseIterable, Hashable, Sendable {
@@ -16,10 +17,32 @@ public enum MeasurementEndpoint: CaseIterable, Hashable, Sendable {
         case .widthEnd: "身幅の右端"
         }
     }
+
+    /// VoiceOver adjustments follow the meaningful axis of each measurement line.
+    /// This keeps width endpoints independently correctable without requiring a drag.
+    public var accessibilityAdjustmentAxis: MeasurementEndpointAccessibilityAxis {
+        switch self {
+        case .lengthStart, .lengthEnd: .vertical
+        case .widthStart, .widthEnd: .horizontal
+        }
+    }
+
+    public var accessibilityAdjustmentHint: String {
+        switch accessibilityAdjustmentAxis {
+        case .vertical:
+            "上スワイプで上へ、下スワイプで下へ微調整します。"
+        case .horizontal:
+            "上スワイプで右へ、下スワイプで左へ微調整します。"
+        }
+    }
 }
 
-/// A deliberately small VoiceOver adjustment. It changes only the vertical coordinate;
-/// direct dragging remains available for two-dimensional correction.
+public enum MeasurementEndpointAccessibilityAxis: Equatable, Sendable {
+    case vertical
+    case horizontal
+}
+
+/// A deliberately small VoiceOver adjustment along an endpoint's meaningful measurement axis.
 public enum MeasurementEndpointAccessibilityAdjustment: Equatable, Sendable {
     case increment
     case decrement
@@ -140,6 +163,17 @@ public struct MeasurementEndpointEditor: Equatable {
         }
     }
 
+    /// Stable VoiceOver value for an endpoint. It deliberately describes the pending
+    /// measurement state rather than transient drag or zoom coordinates.
+    public func accessibilityValue(for endpoint: MeasurementEndpoint) -> String {
+        switch endpoint {
+        case .lengthStart, .lengthEnd:
+            "着丈 \(measurements.length.centimeters, format: .number.precision(.fractionLength(1))) cm、承認待ち"
+        case .widthStart, .widthEnd:
+            "身幅 \(measurements.width.centimeters, format: .number.precision(.fractionLength(1))) cm、承認待ち"
+        }
+    }
+
     @discardableResult
     public mutating func update(
         _ endpoint: MeasurementEndpoint,
@@ -174,11 +208,23 @@ public struct MeasurementEndpointEditor: Equatable {
     ) throws -> MeasurementGeometryResult {
         precondition(step.isFinite && step > 0, "Accessibility adjustment step must be positive and finite")
         let current = point(for: endpoint)
-        let signedStep = adjustment == .increment ? -step : step
-        let updated = try SessionNormalizedPoint(
-            x: current.x,
-            y: min(max(current.y + signedStep, 0), 1)
-        )
+        let updated: SessionNormalizedPoint
+        switch endpoint.accessibilityAdjustmentAxis {
+        case .vertical:
+            // VoiceOver increment maps to moving upward in image coordinates.
+            let signedStep = adjustment == .increment ? -step : step
+            updated = try SessionNormalizedPoint(
+                x: current.x,
+                y: min(max(current.y + signedStep, 0), 1)
+            )
+        case .horizontal:
+            // VoiceOver increment maps to moving right in image coordinates.
+            let signedStep = adjustment == .increment ? step : -step
+            updated = try SessionNormalizedPoint(
+                x: min(max(current.x + signedStep, 0), 1),
+                y: current.y
+            )
+        }
         return try update(endpoint, to: updated)
     }
 

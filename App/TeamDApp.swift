@@ -9,10 +9,12 @@ struct TeamDApp: App {
     init() {
         #if TEAM_D_FIXTURE
         dependencies = CameraFlowComposition.fixture()
-        #else
+        #elseif TEAM_D_LIVE
         dependencies = CameraFlowComposition.live(
             cameraAuthorization: AVCameraAuthorizationProvider()
         )
+        #else
+        #error("TeamD must be built with TEAM_D_FIXTURE or TEAM_D_LIVE")
         #endif
     }
 
@@ -91,14 +93,12 @@ private struct CaptureStartView: View {
         ZStack {
             Color.black
             VStack(spacing: 20) {
-                if mode == .fixture {
-                    Text("テストデータ")
-                        .font(.caption.weight(.semibold))
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(.thinMaterial, in: Capsule())
-                        .accessibilityIdentifier("fixture-mode-badge")
-                }
+                Text(mode == .fixture ? "Fixture モード" : "Live モード")
+                    .font(.caption.weight(.semibold))
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(.thinMaterial, in: Capsule())
+                    .accessibilityIdentifier(mode == .fixture ? "fixture-mode-badge" : "live-mode-badge")
 
                 Spacer()
 

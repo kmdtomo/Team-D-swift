@@ -72,5 +72,9 @@ let package = Package(
             name: "APIClientTests",
             dependencies: ["APIClient", "ContractKit", "DomainKit"]
         ),
+        .testTarget(
+            name: "CompositionKitTests",
+            dependencies: ["CompositionKit", "DomainKit"]
+        ),
     ]
 )

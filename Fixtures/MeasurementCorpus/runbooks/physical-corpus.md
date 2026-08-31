@@ -6,8 +6,11 @@
    (100% / Actual Size). Do not use "Fit", "Shrink", or borderless expansion.
 2. With a physical ruler, measure the **outer black square**. Record `50.0mm`
    (within printer/ruler resolution) in
-   `scripts/t11_01_measurement_corpus/physical-corpus-log.csv`. A failed
-   ruler check invalidates every capture from that print.
+   `scripts/t11_01_measurement_corpus/marker-print-evidence.csv`. Give the
+   print a non-identifying `marker-print-*` ID, record the frozen PDF hash,
+   100% print scale, first-party rights basis, and SHA-256 of a
+   rights/PII-reviewed external evidence file. A failed ruler check invalidates
+   every capture from that print.
 3. Use a generic demo T-shirt only. Remove people, faces, names, addresses,
    labels containing personal data, serial numbers, screens, mail, and any
    third-party copyrighted image from the scene. Confirm both columns in the
@@ -41,10 +44,28 @@ recorded separately.
 ## Annotation and review
 
 For each capture, write the image path/hash, non-identifying capture ID,
-device/iOS, ruler result, distance/tilt/light bands, scenario, expected and
-observed failure, marker corners in top-left/top-right/bottom-right/bottom-left
-order, derived px/cm, mask status, measurement endpoints, tape-measure
-length/width, rights/PII checks, and annotation-complete flag in the CSV.
+linked marker-print ID, device/iOS, distance/tilt/light bands, scenario,
+expected and observed failure, marker corners in
+top-left/top-right/bottom-right/bottom-left order, derived px/cm, mask status,
+measurement endpoints, tape-measure length/width, rights basis, rights/PII
+checks, and annotation-complete flag in the CSV. Use JSON in the corner and
+endpoint cells. `rights_checked`, `pii_checked`, `annotation_complete`, and the
+marker print's `review_complete` are literal lowercase `true` only after a
+human has actually completed that review.
+
+Store the referenced binaries outside the repository, under one review root,
+using only relative paths in both CSVs. The source-only gate command is:
+
+```sh
+python3 scripts/t11_01_measurement_corpus/lint_corpus.py \
+  --physical-root /absolute/path/to/t11-01-reviewed-evidence \
+  --require-physical-gate --summary-json
+```
+
+The command rejects absolute/traversing CSV paths, duplicate capture/hash
+identity, non-iPhone/Simulator labels, unreviewed rights or PII, malformed
+annotations, missing files, signature/extension mismatch, hash mismatch,
+missing 50.0mm ruler evidence, and an incomplete 30-capture distribution.
 Only after review may approved, rights-cleared images be stored under the future
 approved corpus policy. Keep raw camera photos out of this repository until
 that approval exists.

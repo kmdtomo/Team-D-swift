@@ -10,7 +10,42 @@ REPO = ROOT.parents[1]
 FAILURES = {"MARKER_MISSING","MARKER_MULTIPLE","MARKER_TOO_SMALL","MARKER_OCCLUDED","GARMENT_OUT_OF_FRAME","GARMENT_MARKER_OVERLAP","SEGMENTATION_FAILED","ENDPOINTS_INVALID"}
 CASE_KEYS = {"id","file","sha256","markerMode","markerGeometry","markerCorners","expectedCorners","renderedScalePxPerCm","scaleAccepted","annotationId","expectedFailure","failurePair","boundary","qualityHint","garmentMode","qualityFlag"}
 SHA = re.compile(r"^[0-9a-f]{64}$")
-LOG_COLUMNS = ["capture_id","image_path","image_sha256","device_model","ios_version","marker_ruler_mm","distance_band","tilt_band","lighting_band","scenario","expected_failure","observed_failure","corners_tl_tr_br_bl","scale_px_per_cm","mask_status","measurement_endpoints","length_cm","width_cm","rights_checked","pii_checked","annotation_complete","notes"]
+LOG_COLUMNS = ["capture_id","image_path","image_sha256","marker_print_id","device_model","ios_version","distance_band","tilt_band","lighting_band","scenario","expected_failure","observed_failure","corners_tl_tr_br_bl","scale_px_per_cm","mask_status","measurement_endpoints","length_cm","width_cm","rights_checked","rights_basis","pii_checked","annotation_complete","notes"]
+MARKER_LOG_COLUMNS = ["marker_print_id","marker_pdf_sha256","print_scale_percent","ruler_measurement_mm","evidence_path","evidence_sha256","rights_checked","rights_basis","pii_checked","review_complete","notes"]
+CAPTURE_ID = re.compile(r"^physical-[a-z0-9]+(?:-[a-z0-9]+)*$")
+MARKER_PRINT_ID = re.compile(r"^marker-print-[a-z0-9]+(?:-[a-z0-9]+)*$")
+IOS_VERSION = re.compile(r"^[0-9]+(?:\.[0-9]+){1,2}$")
+CAPTURE_EXTENSIONS = {".heic", ".heif", ".jpg", ".jpeg", ".png"}
+EVIDENCE_EXTENSIONS = CAPTURE_EXTENSIONS | {".pdf"}
+DISTANCE_BANDS = {"close", "medium", "far"}
+TILT_BANDS = {"overhead", "slight"}
+LIGHTING_BANDS = {"bright-indoor", "diffuse-indoor", "dim-indoor"}
+PHYSICAL_SCENARIOS = {
+    "valid", "perspective-valid", "dark", "blur", "marker-missing",
+    "marker-multiple", "marker-too-small-79px", "marker-occluded",
+    "garment-out-of-frame", "segmentation-failed", "endpoints-invalid",
+    "edge-16px", "ratio-0649", "overlap-23px",
+}
+PHYSICAL_FAILURES = {
+    "marker-missing": "MARKER_MISSING",
+    "marker-multiple": "MARKER_MULTIPLE",
+    "marker-too-small-79px": "MARKER_TOO_SMALL",
+    "marker-occluded": "MARKER_OCCLUDED",
+    "garment-out-of-frame": "GARMENT_OUT_OF_FRAME",
+    "segmentation-failed": "SEGMENTATION_FAILED",
+    "endpoints-invalid": "ENDPOINTS_INVALID",
+    "edge-16px": "MARKER_MISSING",
+    "ratio-0649": "MARKER_MISSING",
+    "overlap-23px": "GARMENT_MARKER_OVERLAP",
+}
+CORE_BUCKETS = {
+    "valid-close-slight-bright": 6,
+    "valid-medium-overhead-diffuse": 6,
+    "valid-far-slight-dim": 6,
+    "perspective-valid": 4,
+    "dark": 4,
+    "blur": 4,
+}
 BOUNDARY_CASES = {
     "marker-too-small-79px":{"minimumMarkerSidePx":79},
     "marker-at-80px":{"minimumMarkerSidePx":80},
@@ -40,11 +75,191 @@ SCENARIO_RULES = {
 }
 
 def fail(message): raise ValueError(f"T11-01 corpus lint: {message}")
-def point(value): return isinstance(value,list) and len(value)==2 and all(isinstance(v,(int,float)) and math.isfinite(v) for v in value)
+def point(value): return isinstance(value,list) and len(value)==2 and all(not isinstance(v,bool) and isinstance(v,(int,float)) and math.isfinite(v) for v in value)
 def distance(a,b): return math.hypot(a[0]-b[0],a[1]-b[1])
 def polygon_area(points): return sum(a[0]*b[1]-a[1]*b[0] for a,b in zip(points,points[1:]+points[:1])) / 2
 def finite_geometry(value):
     return isinstance(value,dict) and set(value) in ({"x","y","side"},{"x","y","side","height"}) and all(isinstance(v,(int,float)) and math.isfinite(v) for v in value.values()) and value["side"] > 0 and value.get("height",value["side"]) > 0
+
+def strict_number(value, label, *, positive=False):
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        fail(f"{label}: expected a finite number")
+    if not math.isfinite(parsed) or (positive and parsed <= 0): fail(f"{label}: expected a finite positive number")
+    return parsed
+
+def strict_true(value, label):
+    if value != "true": fail(f"{label}: must be literal true after human review")
+
+def parsed_json(value, label):
+    try:
+        return json.loads(value)
+    except (TypeError, json.JSONDecodeError):
+        fail(f"{label}: must be valid JSON")
+
+def validated_relative_path(value, extensions, label):
+    if not isinstance(value, str) or not value or "\\" in value: fail(f"{label}: path must be a nonempty POSIX relative path")
+    path = Path(value)
+    if path.is_absolute() or any(part in {"", ".", ".."} for part in path.parts): fail(f"{label}: path traversal/absolute paths are forbidden")
+    if path.suffix.lower() not in extensions: fail(f"{label}: unsupported file extension")
+    return path
+
+def file_has_expected_magic(path):
+    data = path.read_bytes()[:32]
+    suffix = path.suffix.lower()
+    if suffix in {".jpg", ".jpeg"}: return data.startswith(b"\xff\xd8\xff")
+    if suffix == ".png": return data.startswith(b"\x89PNG\r\n\x1a\n")
+    if suffix in {".heic", ".heif"}: return len(data) >= 12 and data[4:8] == b"ftyp"
+    if suffix == ".pdf": return data.startswith(b"%PDF-")
+    return False
+
+def verified_external_file(root, relative, expected_hash, label):
+    root = root.resolve()
+    try:
+        root.relative_to(REPO.resolve())
+    except ValueError:
+        pass
+    else:
+        fail("physical evidence root must remain outside the repository")
+    target = (root / relative).resolve()
+    try:
+        target.relative_to(root)
+    except ValueError:
+        fail(f"{label}: resolved path escapes the physical evidence root")
+    if not target.is_file(): fail(f"{label}: referenced external file is missing")
+    if not file_has_expected_magic(target): fail(f"{label}: file signature does not match its approved image/PDF extension")
+    if hashlib.sha256(target.read_bytes()).hexdigest() != expected_hash: fail(f"{label}: external file hash mismatch")
+
+def csv_rows(path, columns, label):
+    with path.open(newline="", encoding="utf-8") as stream:
+        reader = csv.DictReader(stream)
+        if reader.fieldnames != columns: fail(f"{label} schema/columns are incomplete")
+        rows = list(reader)
+    for index, row in enumerate(rows, 2):
+        if None in row or any(value is None for value in row.values()): fail(f"{label} row {index}: malformed CSV columns")
+    return rows
+
+def validate_marker_log(path, marker_pdf_sha256, physical_root=None):
+    records, verified_ids, paths, hashes = {}, set(), set(), set()
+    for index, row in enumerate(csv_rows(path, MARKER_LOG_COLUMNS, "marker print evidence log"), 2):
+        label = f"marker print evidence row {index}"
+        marker_id = row["marker_print_id"]
+        if not MARKER_PRINT_ID.fullmatch(marker_id) or marker_id in records: fail(f"{label}: marker_print_id must be unique and non-identifying")
+        if row["marker_pdf_sha256"] != marker_pdf_sha256: fail(f"{label}: marker PDF hash is not the frozen T11-01 artifact")
+        if strict_number(row["print_scale_percent"], f"{label} print scale") != 100.0: fail(f"{label}: marker must be printed at 100 percent")
+        if strict_number(row["ruler_measurement_mm"], f"{label} ruler measurement", positive=True) != 50.0: fail(f"{label}: ruler measurement must be 50.0mm")
+        evidence_path = validated_relative_path(row["evidence_path"], EVIDENCE_EXTENSIONS, f"{label} evidence_path")
+        evidence_hash = row["evidence_sha256"]
+        if not SHA.fullmatch(evidence_hash): fail(f"{label}: evidence SHA-256 is invalid")
+        if str(evidence_path) in paths or evidence_hash in hashes: fail(f"{label}: evidence path/hash must be unique")
+        strict_true(row["rights_checked"], f"{label} rights_checked")
+        if row["rights_basis"] != "first-party-capture": fail(f"{label}: ruler evidence must be a first-party capture")
+        strict_true(row["pii_checked"], f"{label} pii_checked")
+        strict_true(row["review_complete"], f"{label} review_complete")
+        if physical_root is not None:
+            verified_external_file(physical_root, evidence_path, evidence_hash, label)
+            verified_ids.add(marker_id)
+        paths.add(str(evidence_path)); hashes.add(evidence_hash); records[marker_id] = row
+    return records, verified_ids
+
+def validate_corners(value, label):
+    corners = parsed_json(value, label)
+    if not isinstance(corners, list) or len(corners) != 4 or not all(point(item) and all(component >= 0 for component in item) for item in corners): fail(f"{label}: corners must be four finite nonnegative TL/TR/BR/BL points")
+    if polygon_area(corners) <= 0: fail(f"{label}: corners must be ordered TL/TR/BR/BL clockwise in image coordinates")
+    return corners
+
+def validate_endpoints(value, label):
+    endpoints = parsed_json(value, label)
+    expected = {"lengthStart", "lengthEnd", "widthStart", "widthEnd"}
+    if not isinstance(endpoints, dict) or set(endpoints) != expected or not all(point(item) and all(component >= 0 for component in item) for item in endpoints.values()): fail(f"{label}: endpoints must be four finite nonnegative pixel points")
+
+def core_bucket(row):
+    scenario = row["scenario"]
+    if scenario != "valid": return scenario if scenario in {"perspective-valid", "dark", "blur"} else None
+    conditions = (row["distance_band"], row["tilt_band"], row["lighting_band"])
+    return {
+        ("close", "slight", "bright-indoor"): "valid-close-slight-bright",
+        ("medium", "overhead", "diffuse-indoor"): "valid-medium-overhead-diffuse",
+        ("far", "slight", "dim-indoor"): "valid-far-slight-dim",
+    }.get(conditions)
+
+def lint_log(path=None, marker_path=None, physical_root=None):
+    path = path or Path(__file__).parent / "physical-corpus-log.csv"
+    marker_path = marker_path or Path(__file__).parent / "marker-print-evidence.csv"
+    marker_hash = json.loads((ROOT / "corpus-manifest.json").read_text(encoding="utf-8"))["artifacts"][0]["sha256"]
+    marker_records, verified_markers = validate_marker_log(marker_path, marker_hash, physical_root)
+    rows = csv_rows(path, LOG_COLUMNS, "physical corpus log")
+    ids, paths, hashes, verified_captures = set(), set(), set(), set()
+    distribution = {name: 0 for name in CORE_BUCKETS}
+    for index, row in enumerate(rows, 2):
+        label = f"physical corpus row {index}"
+        capture_id = row["capture_id"]
+        if not CAPTURE_ID.fullmatch(capture_id) or capture_id in ids: fail(f"{label}: capture_id must be unique and non-identifying")
+        image_path = validated_relative_path(row["image_path"], CAPTURE_EXTENSIONS, f"{label} image_path")
+        image_hash = row["image_sha256"]
+        if not SHA.fullmatch(image_hash): fail(f"{label}: image SHA-256 is invalid")
+        if str(image_path) in paths or image_hash in hashes: fail(f"{label}: image path/hash must be unique")
+        if row["marker_print_id"] not in marker_records: fail(f"{label}: marker_print_id has no reviewed 50.0mm ruler evidence")
+        if not row["device_model"].startswith("iPhone") or "simulator" in row["device_model"].lower(): fail(f"{label}: device_model must identify a physical iPhone model")
+        if not IOS_VERSION.fullmatch(row["ios_version"]): fail(f"{label}: ios_version is invalid")
+        if row["distance_band"] not in DISTANCE_BANDS or row["tilt_band"] not in TILT_BANDS or row["lighting_band"] not in LIGHTING_BANDS: fail(f"{label}: distance/tilt/lighting bands are outside the runbook vocabulary")
+        scenario = row["scenario"]
+        if scenario not in PHYSICAL_SCENARIOS: fail(f"{label}: scenario is not an approved T11-01 physical case")
+        expected_failure = row["expected_failure"] or None
+        observed_failure = row["observed_failure"] or None
+        if expected_failure not in FAILURES | {None} or observed_failure not in FAILURES | {None}: fail(f"{label}: failure code is not finite")
+        if expected_failure != PHYSICAL_FAILURES.get(scenario): fail(f"{label}: expected failure does not match the scenario")
+        marker_unavailable = scenario in {"marker-missing", "marker-multiple", "marker-occluded"}
+        if marker_unavailable:
+            if row["corners_tl_tr_br_bl"] or row["scale_px_per_cm"]: fail(f"{label}: ambiguous/unavailable marker must not publish one corner/scale result")
+        else:
+            validate_corners(row["corners_tl_tr_br_bl"], f"{label} corners")
+            strict_number(row["scale_px_per_cm"], f"{label} scale_px_per_cm", positive=True)
+        expected_mask = {
+            "dark": "quality_rejected",
+            "blur": "quality_rejected",
+            "garment-out-of-frame": "garment_clipped",
+            "segmentation-failed": "segmentation_failed",
+        }.get(scenario, "garment_complete")
+        if row["mask_status"] != expected_mask: fail(f"{label}: mask_status does not match the reviewed core/quality annotation")
+        if scenario in {"garment-out-of-frame", "segmentation-failed"}:
+            if row["measurement_endpoints"]: fail(f"{label}: unavailable garment geometry must not invent endpoints")
+        else:
+            validate_endpoints(row["measurement_endpoints"], f"{label} measurement_endpoints")
+        strict_number(row["length_cm"], f"{label} length_cm", positive=True)
+        strict_number(row["width_cm"], f"{label} width_cm", positive=True)
+        strict_true(row["rights_checked"], f"{label} rights_checked")
+        if row["rights_basis"] not in {"first-party-capture", "documented-license"}: fail(f"{label}: rights_basis must state first-party capture or a documented license")
+        if row["rights_basis"] == "documented-license" and not row["notes"].strip(): fail(f"{label}: documented-license requires a non-identifying license reference in notes")
+        strict_true(row["pii_checked"], f"{label} pii_checked")
+        strict_true(row["annotation_complete"], f"{label} annotation_complete")
+        if physical_root is not None:
+            verified_external_file(physical_root, image_path, image_hash, label)
+            verified_captures.add(capture_id)
+        bucket = core_bucket(row)
+        if bucket is not None: distribution[bucket] += 1
+        ids.add(capture_id); paths.add(str(image_path)); hashes.add(image_hash)
+    missing = {name: required - distribution[name] for name, required in CORE_BUCKETS.items() if distribution[name] < required}
+    core_ids = {row["capture_id"] for row in rows if core_bucket(row) is not None}
+    linked_to_verified_marker = all(row["marker_print_id"] in verified_markers for row in rows if core_bucket(row) is not None)
+    ready = not missing and physical_root is not None and core_ids.issubset(verified_captures) and linked_to_verified_marker
+    blockers = []
+    if missing: blockers.append(f"required core matrix {len(core_ids)}/30; missing distribution: " + ", ".join(f"{name} {distribution[name]}/{CORE_BUCKETS[name]}" for name in CORE_BUCKETS if name in missing))
+    if physical_root is None: blockers.append("external physical evidence root was not supplied, so image/evidence hashes are unverified")
+    elif not core_ids.issubset(verified_captures): blockers.append("one or more core capture files are not hash-verified")
+    if not marker_records: blockers.append("no reviewed ruler-confirmed 50.0mm marker print evidence")
+    elif physical_root is not None and not linked_to_verified_marker: blockers.append("one or more core captures are not linked to hash-verified ruler evidence")
+    return {
+        "status": "ready" if ready else "blocked",
+        "reviewedCaptures": len(rows),
+        "reviewedCoreCaptures": len(core_ids),
+        "fileVerifiedCaptures": len(verified_captures),
+        "reviewedMarkerPrints": len(marker_records),
+        "fileVerifiedMarkerPrints": len(verified_markers),
+        "distribution": distribution,
+        "blockers": blockers,
+    }
 
 def validate_annotations(annotations):
     if not isinstance(annotations,dict) or not annotations: fail("annotations must be a nonempty object")
@@ -181,14 +396,20 @@ def lint_render(manifest, directory):
     if rendered["perspective-valid"] == rendered["valid"]: fail("perspective pixels must differ from valid")
     required = {"segmentation-failed","endpoints-invalid","ratio-0649","ratio-0650","overlap-23px","overlap-24px","dark","blur"}
     if not required.issubset(rendered) or len({hashlib.sha256(rendered[c]).hexdigest() for c in required}) != len(required): fail("semantic cases require distinct rendered hashes")
-def lint_log(path=None):
-    with (path or Path(__file__).parent/"physical-corpus-log.csv").open(newline="",encoding="utf-8") as stream:
-        if csv.DictReader(stream).fieldnames != LOG_COLUMNS: fail("physical log schema/columns are incomplete")
 def main():
-    parser=argparse.ArgumentParser(); parser.add_argument("--render-dir",type=Path); args=parser.parse_args()
-    manifest=json.loads((ROOT/"corpus-manifest.json").read_text(encoding="utf-8")); validate(manifest); lint_log()
+    parser=argparse.ArgumentParser()
+    parser.add_argument("--render-dir",type=Path)
+    parser.add_argument("--physical-root",type=Path,help="external directory containing reviewed capture and ruler-evidence files")
+    parser.add_argument("--require-physical-gate",action="store_true",help="fail unless the complete 30-capture/ruler gate is externally hash-verified")
+    parser.add_argument("--summary-json",action="store_true")
+    args=parser.parse_args()
+    manifest=json.loads((ROOT/"corpus-manifest.json").read_text(encoding="utf-8")); validate(manifest)
+    physical_summary=lint_log(physical_root=args.physical_root)
     if args.render_dir: lint_render(manifest,args.render_dir)
     else:
         with tempfile.TemporaryDirectory(prefix="teamd-t11-01-") as temp: lint_render(manifest,Path(temp))
     print(f"T11-01 corpus lint passed: {len(manifest['cases'])} deterministic synthetic cases.")
+    if args.summary_json: print(json.dumps(physical_summary,sort_keys=True,separators=(",",":")))
+    else: print(f"T11-01 physical gate {physical_summary['status']}: {physical_summary['reviewedCoreCaptures']}/30 reviewed core captures; {physical_summary['fileVerifiedCaptures']} external capture files and {physical_summary['fileVerifiedMarkerPrints']} ruler records hash-verified.")
+    if args.require_physical_gate and physical_summary["status"] != "ready": fail("physical gate remains blocked: " + "; ".join(physical_summary["blockers"]))
 if __name__ == "__main__": main()

@@ -68,5 +68,9 @@ let package = Package(
             name: "DomainKitTests",
             dependencies: ["DomainKit"]
         ),
+        .testTarget(
+            name: "APIClientTests",
+            dependencies: ["APIClient", "ContractKit", "DomainKit"]
+        ),
     ]
 )

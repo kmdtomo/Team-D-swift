@@ -87,6 +87,29 @@ import Testing
     }
 }
 
+@Test func failedTransportIsObservableAndNeverAdvancesPublishedWatermark() async throws {
+    let publisher = FailOncePublisher()
+    let coordinator = LatestAppProducedFramePublisher(publisher: publisher)
+    let started = await coordinator.start()
+    #expect(started)
+
+    await coordinator.offer(try frame(1))
+    await publisher.waitForAttemptedSequences([1])
+    await waitForCoordinatorToBecomeIdle(coordinator)
+
+    let failed = await coordinator.snapshot()
+    #expect(failed.lastPublishedSequence == nil)
+    #expect(failed.lastFailedSequence == 1)
+    #expect(failed.publishFailureCount == 1)
+
+    await coordinator.offer(try frame(2))
+    await publisher.waitForPublishedSequences([2])
+    let recovered = await coordinator.snapshot()
+    #expect(recovered.lastPublishedSequence == 2)
+    #expect(recovered.lastFailedSequence == 1)
+    #expect(recovered.publishFailureCount == 1)
+}
+
 private func frame(_ sequence: UInt64) throws -> AppProducedVideoFrame {
     try .init(sequence: sequence, timestampNanoseconds: sequence * 1_000, width: 1920, height: 1080, orientation: .portrait)
 }
@@ -125,4 +148,19 @@ private actor GatePublisher: AppProducedVideoFramePublishing {
     func releaseFirstPublish() async { releaseFirst = true }
     func waitForPublishedSequences(_ expected: [UInt64]) async { while sequences != expected { await Task.yield() } }
     func waitForPublisherToBecomeIdle() async { while isPublishing { await Task.yield() } }
+}
+
+private actor FailOncePublisher: AppProducedVideoFramePublishing {
+    private(set) var attemptedSequences: [UInt64] = []
+    private(set) var publishedSequences: [UInt64] = []
+
+    func publish(_ frame: AppProducedVideoFrame) async throws {
+        attemptedSequences.append(frame.sequence)
+        if frame.sequence == 1 { throw AppProducedVideoFrameError.unavailableSDK }
+        publishedSequences.append(frame.sequence)
+    }
+
+    func cancelPublishing() async {}
+    func waitForAttemptedSequences(_ expected: [UInt64]) async { while attemptedSequences != expected { await Task.yield() } }
+    func waitForPublishedSequences(_ expected: [UInt64]) async { while publishedSequences != expected { await Task.yield() } }
 }

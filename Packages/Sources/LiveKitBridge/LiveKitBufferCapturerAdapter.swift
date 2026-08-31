@@ -49,10 +49,13 @@ public final class LiveKitBufferCapturerAdapter: AppProducedVideoFramePublishing
         throw AppProducedVideoFrameError.unavailableSDK
     }
 
-    /// The only production pixel handoff. The sample must originate in T05's
-    /// already-configured video output; this adapter never creates an AVCapture
-    /// input, output, or session. `metadata` is kept explicit so T08-02 can
-    /// assert the source sequence and rotation before publishing.
+    /// Reserved SDK pixel handoff, not an operational T08-01 publish path.
+    /// `LatestAppProducedFramePublisher` currently receives metadata only, so
+    /// it cannot call this overload. T08-02 must first extend the capture
+    /// boundary to retain the original `CMSampleBuffer` with its metadata, then
+    /// wire that typed payload through the coordinator. The sample must
+    /// originate in T05's already-configured video output; this adapter never
+    /// creates an AVCapture input, output, or session.
     public func publish(
         sampleBuffer: CMSampleBuffer,
         metadata: AppProducedVideoFrame

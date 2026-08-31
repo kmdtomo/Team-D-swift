@@ -61,6 +61,11 @@ public struct AppProducedVideoPublishSnapshot: Equatable, Sendable {
     public let isPublishing: Bool
     public let pendingSequence: UInt64?
     public let lastPublishedSequence: UInt64?
+    /// A frame attempted at the transport boundary but not accepted by it. This
+    /// is intentionally separate from `lastPublishedSequence`: a failed
+    /// LiveKit handoff is never presented as a published frame.
+    public let lastFailedSequence: UInt64?
+    public let publishFailureCount: UInt64
     public let droppedFrameCount: UInt64
 
     init(
@@ -68,12 +73,16 @@ public struct AppProducedVideoPublishSnapshot: Equatable, Sendable {
         isPublishing: Bool,
         pendingSequence: UInt64?,
         lastPublishedSequence: UInt64?,
+        lastFailedSequence: UInt64?,
+        publishFailureCount: UInt64,
         droppedFrameCount: UInt64
     ) {
         self.isActive = isActive
         self.isPublishing = isPublishing
         self.pendingSequence = pendingSequence
         self.lastPublishedSequence = lastPublishedSequence
+        self.lastFailedSequence = lastFailedSequence
+        self.publishFailureCount = publishFailureCount
         self.droppedFrameCount = droppedFrameCount
     }
 }
@@ -89,6 +98,8 @@ public actor LatestAppProducedFramePublisher {
     private var publishing = false
     private var pending: AppProducedVideoFrame?
     private var lastPublishedSequence: UInt64?
+    private var lastFailedSequence: UInt64?
+    private var publishFailureCount: UInt64 = 0
     private var droppedFrameCount: UInt64 = 0
     private var worker: Task<Void, Never>?
 
@@ -107,6 +118,8 @@ public actor LatestAppProducedFramePublisher {
         publishing = false
         pending = nil
         lastPublishedSequence = nil
+        lastFailedSequence = nil
+        publishFailureCount = 0
         droppedFrameCount = 0
         return true
     }
@@ -142,6 +155,8 @@ public actor LatestAppProducedFramePublisher {
             isPublishing: publishing,
             pendingSequence: pending?.sequence,
             lastPublishedSequence: lastPublishedSequence,
+            lastFailedSequence: lastFailedSequence,
+            publishFailureCount: publishFailureCount,
             droppedFrameCount: droppedFrameCount
         )
     }
@@ -162,9 +177,12 @@ public actor LatestAppProducedFramePublisher {
             do {
                 try await publisher.publish(frame)
             } catch {
-                // T08-02 maps LiveKit transport failures to the explicit
-                // connection state. This coordinator only preserves bounded
-                // frame ownership and must not fabricate a fixture success.
+                // T08-02 maps this observable transport failure to its explicit
+                // connection state. Do not advance the published watermark: a
+                // missing SDK or rejected handoff is never fixture success.
+                lastFailedSequence = frame.sequence
+                publishFailureCount &+= 1
+                continue
             }
             guard active, token == generation, !Task.isCancelled else { return }
             if lastPublishedSequence == nil || frame.sequence > lastPublishedSequence! {

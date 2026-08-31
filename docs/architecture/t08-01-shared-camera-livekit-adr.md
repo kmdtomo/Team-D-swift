@@ -31,11 +31,16 @@
    create a session or mutate pixel bytes.
 3. `LatestAppProducedFramePublisher` accepts only the latest pending frame,
    permits one `publish` at a time, drops stale/replaced frames, and invalidates
-   late work using a lifecycle generation on stop.
-4. T08-02 must create/publish the buffer track after Room join and connect the
-   actual `CMSampleBuffer` handoff. The SDK adapter intentionally remains
-   unavailable until that shared dependency and the exact app integration are
-   added; no local/live fallback is implied here.
+   late work using a lifecycle generation on stop. A rejected transport handoff
+   records `lastFailedSequence`/`publishFailureCount` and never advances
+   `lastPublishedSequence`; T08-02 must use that observable failure for its
+   connection state rather than treating it as a frame publish.
+4. This spike does **not** yet provide an operational SDK handoff: its generic
+   coordinator carries frame metadata only, while the SDK overload requires the
+   original `CMSampleBuffer`. T08-02 must create/publish the buffer track after
+   Room join, extend the capture boundary with a lossless timed sample wrapper,
+   and wire that payload through the coordinator. Until then, the generic SDK
+   publisher throws `unavailableSDK`; no local/live fallback is implied here.
 
 ## Required Phase 2 / device gates
 

@@ -168,7 +168,7 @@
   - device: not required
   - limitations: Xcode 26.2 emits exactly three `appintentsmetadataprocessor` metadata-extraction diagnostics despite `ENABLE_APP_INTENTS_METADATA_PROCESSING=NO`; these are Xcode tool diagnostics with no source location, not source/compiler warnings. `scripts/check_xcode_warnings.py` allowlists only this exact text and rejects all other warning forms. Camera-first session composition and `front 1/4` behavior remain intentionally pending T02-02.
 
-- [ ] **T02-02 SwiftUI app shellと依存注入点を作る**
+- [x] **T02-02 SwiftUI app shellと依存注入点を作る**
   - 担当する責務: レーンAが、fixture/live providerを画面コードから分離し、カメラ撮影をrootとする単一セッションを型安全に起動する。
   - 依存する先行タスク: T02-01。
   - 実装対象: `App` entry、`front 1/4`カメラまたは同フロー内の権限状態を初期ルートにするsingle-session navigation、session composition root、clock/UUID/provider/image storeのprotocol注入、Preview用stub。ホーム、一覧、ダッシュボード、tab shell、login gate、独立tutorialは作らない。
@@ -176,6 +176,16 @@
   - 自動テスト方法: dependency graphの生成テスト、fixture/live各compositionのsmoke test、SwiftUI Preview build、cold-launch XCUITestでホーム・一覧・tabを経由せず権限状態または`front 1/4`へ到達することを検証する。
   - 実機確認が必要か: 不要。
   - fixture / live: 両方。
+
+### T02-02 検証記録（2026-08-31）
+
+- Verification (2026-08-31):
+  - commit/build: `4825349 feat: add camera-first app shell`; Xcode 26.2 (17C52), Swift 6.2.3 compiler / Swift 6 language mode, iPhone 16 Pro Simulator (iOS 18.5, arm64); clean clone `/tmp/teamd-t02-clean.Slmqre/repo`
+  - automated tests: `swift build --package-path Packages --scratch-path /tmp/teamd-t02-clean.Slmqre/swift`; `xcodebuild test -workspace TeamD.xcworkspace -scheme TeamD -configuration Debug-Fixture -destination 'platform=iOS Simulator,id=9CF57E09-7DD0-4C17-9A98-7ECA8A9BD89A,arch=arm64' -derivedDataPath /tmp/teamd-t02-clean.Slmqre/fixture CODE_SIGNING_ALLOWED=NO`; `xcodebuild build -workspace TeamD.xcworkspace -scheme TeamD -configuration Debug -destination 'generic/platform=iOS Simulator' -derivedDataPath /tmp/teamd-t02-clean.Slmqre/live CODE_SIGNING_ALLOWED=NO`; `python3 scripts/check_xcode_warnings.py /tmp/teamd-t02-clean.Slmqre/fixture.log`; `python3 scripts/check_xcode_warnings.py /tmp/teamd-t02-clean.Slmqre/live.log`; `python3 scripts/lint_package_graph.py`; `./scripts/lint_t01_01.sh`; `python3 scripts/lint_t01_02.py`; `git diff --check` all passed
+  - fixture: Debug-Fixture `xcodebuild test` passed from the clean clone (unit 4/4, UI 1/1; `TEST SUCCEEDED`); the SwiftUI Preview compiles; fixture is visibly labelled `テストデータ`; warning checker found 3 known AppIntents metadata diagnostics and 0 unexpected diagnostics; duplicate runtime class diagnostics 0
+  - live: Debug `xcodebuild build` passed from the clean clone (`BUILD SUCCEEDED`); warning checker found 1 known AppIntents metadata diagnostic and 0 unexpected diagnostics; live composition remained live and has no fixture fallback
+  - device: not required
+  - limitations: T05-03 owns the Settings/PhotosPicker fallback and remains unimplemented. T05/T06 own the actual AVCaptureSession, preview, fixed 2D guides, and shutter and remain unimplemented. The clean clone remained clean after all commands.
 
 - [ ] **T02-03 開発者が1時間以内にSimulator testへ到達できるbaselineを作る**
   - 担当する責務: レーンA/Fが、Xcode以外の必須ローカルserviceなしで初回実行できる環境を定義する。

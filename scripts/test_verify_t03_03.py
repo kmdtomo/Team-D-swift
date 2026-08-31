@@ -31,6 +31,14 @@ class CredentialScanTests(unittest.TestCase):
         self.assertIn("credential assignment", verify.findings(captured))
         self.assertIn("credential assignment", verify.findings(json))
 
+    def test_rejects_rembg_assignments_in_each_text_format(self):
+        xcconfig = "RE" + "MBG_INTERNAL_URL = http://masker.invalid:7000"
+        swift = "let rem" + "bgURL = \"https://masker.invalid\""
+        json = "{\"rem" + "bgPort\": \"7000\"}"
+        self.assertIn("rembg internal assignment", verify.findings(xcconfig))
+        self.assertIn("rembg internal assignment", verify.findings(swift))
+        self.assertIn("rembg internal assignment", verify.findings(json))
+
     def test_requires_an_exclusive_build_mode_guard(self):
         self.assertTrue(verify.has_exact_mode_guards("#if TEAM_D_FIXTURE && TEAM_D_LIVE\n#elseif TEAM_D_FIXTURE\n#elseif TEAM_D_LIVE\n#error(\"bad\")"))
         self.assertFalse(verify.has_exact_mode_guards("#if TEAM_D_FIXTURE\n#else\n#endif"))
@@ -56,6 +64,10 @@ A000000000000000000000B3 /* Debug-Fixture */ = {isa = XCBuildConfiguration; base
         self.assertIn("JWT-shaped token", verify.findings("eyJhbGciOiJIUzI1NiJ9." + "eyJzdWIiOiJ0ZXN0In0.signaturevalue"))
         self.assertIn("private key", verify.findings("-----BEGIN " + "PRIVATE KEY-----"))
         self.assertIn("private endpoint", verify.findings("http://127.0.0." + "1:7000/remove-background"))
+
+    def test_rejects_rfc1918_and_ipv6_loopback_endpoints(self):
+        for endpoint in ("http://10.0.0." + "1", "https://172.16.0." + "1", "wss://192.168.1." + "1:7880", "https://[::" + "1]:443"):
+            self.assertIn("private endpoint", verify.findings(endpoint))
 
     def test_product_scan_recurses_through_bundle_resources(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -83,6 +95,12 @@ A000000000000000000000B3 /* Debug-Fixture */ = {isa = XCBuildConfiguration; base
             }))
             verify.check_product(bundle, "fixture")
             self.assertRaises(SystemExit, verify.check_product, bundle, "live")
+
+    def test_rejects_sensitive_and_rembg_plist_keys_recursively(self):
+        with self.assertRaises(SystemExit):
+            verify.check_plist(Path("Info.plist"), {"Nested": {"rem" + "bgInternalURL": "http://masker" + ".invalid:7000"}})
+        with self.assertRaises(SystemExit):
+            verify.check_plist(Path("Info.plist"), {"api" + "Key": "unsafe-value"})
 
 
 if __name__ == "__main__":

@@ -18,9 +18,11 @@ SCHEME = ROOT / "TeamD.xcodeproj/xcshareddata/xcschemes/TeamD.xcscheme"
 XCCONFIG_CREDENTIAL = re.compile(r"(?m)^\s*(?:[A-Z0-9_]*(?:API[_-]?KEY|SECRET|TOKEN)[A-Z0-9_]*)\s*[=:]\s*([^$\s#][^\s#]*)")
 SWIFT_CREDENTIAL = re.compile(r"(?im)^\s*(?:let|var)\s+(?:[A-Z0-9_]*(?:API[_-]?KEY|SECRET|TOKEN)[A-Z0-9_]*)\s*=\s*[\"']([^\"']+)")
 JSON_CREDENTIAL = re.compile(r"(?i)\"(?:api[_-]?key|secret|token)\"\s*:\s*\"([^\"]+)\"")
+IMAGE_MASK_ASSIGNMENT = re.compile(r"(?im)^\s*(?:(?:let|var)\s+)?[A-Z0-9_]*rembg[A-Z0-9_]*(?:url|host|port)?\s*[=:]\s*[\"']?([^\s#\"']+)")
+JSON_MASK_FIELD = re.compile(r"(?i)\"[^\"]*rembg[^\"]*\"\s*:\s*\"([^\"]+)\"")
 JWT = re.compile(r"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b")
 PRIVATE_KEY = re.compile(r"-----BEGIN (?:[A-Z ]+ )?PRIVATE KEY-----")
-PRIVATE_ADDRESS = re.compile(r"(?i)(?:https?|wss?)://(?:localhost|127\.0\.0\.1|0\.0\.0\.0)(?::\d+)?")
+PRIVATE_ADDRESS = re.compile(r"(?i)(?:https?|wss?)://(?:localhost|127\.0\.0\.1|0\.0\.0\.0|10(?:\.\d{1,3}){3}|172\.(?:1[6-9]|2\d|3[01])(?:\.\d{1,3}){2}|192\.168(?:\.\d{1,3}){2}|\[?::1\]?)(?::\d+)?")
 SAFE_SYNTHETIC = ("synthetic.not-a-secret", "eyJhbGciOiJIUzI1NiJ9.payload.signature", "-DO-NOT-LEAK", "example.invalid", "example.test")
 
 
@@ -40,6 +42,9 @@ def findings(value: str) -> list[str]:
         candidate = match.group(1)
         if not any(marker in candidate for marker in SAFE_SYNTHETIC):
             result.append("credential assignment")
+    for match in (*IMAGE_MASK_ASSIGNMENT.finditer(value), *JSON_MASK_FIELD.finditer(value)):
+        if not any(marker in match.group(1) for marker in SAFE_SYNTHETIC):
+            result.append("rembg internal assignment")
     if JWT.search(value):
         result.append("JWT-shaped token")
     if PRIVATE_KEY.search(value):
@@ -52,6 +57,20 @@ def findings(value: str) -> list[str]:
 def check_content(path: Path, value: str) -> None:
     found = findings(value)
     require(not found, f"{path}: {', '.join(found)}")
+
+
+def check_plist(path: Path, value: object) -> None:
+    """Reject secret/rembg-shaped plist fields, including nested dictionaries."""
+    if isinstance(value, dict):
+        for key, nested in value.items():
+            lowered = str(key).lower()
+            if any(marker in lowered for marker in ("apikey", "api_key", "secret", "token", "rembg")):
+                rendered = str(nested)
+                require(any(marker in rendered for marker in SAFE_SYNTHETIC), f"{path}: sensitive plist key {key}")
+            check_plist(path, nested)
+    elif isinstance(value, list):
+        for nested in value:
+            check_plist(path, nested)
 
 
 def scanned_file_content(path: Path) -> str:
@@ -72,6 +91,11 @@ def check_tracked_repository() -> None:
         if not path.is_file():
             continue
         check_content(path.relative_to(ROOT), scanned_file_content(path))
+        if path.suffix == ".plist":
+            try:
+                check_plist(path.relative_to(ROOT), plistlib.loads(path.read_bytes()))
+            except plistlib.InvalidFileException:
+                pass
 
 
 def check_templates() -> None:
@@ -165,6 +189,7 @@ def check_product(product: Path, expected_mode: str | None = None) -> None:
     info_path = product / "Info.plist"
     require(info_path.is_file(), f"built product is missing Info.plist: {product}")
     info = plistlib.loads(info_path.read_bytes())
+    check_plist(info_path, info)
     require(info.get("TeamDMode") in {"fixture", "live"}, "built product has an explicit TeamDMode")
     if expected_mode:
         require(info.get("TeamDMode") == expected_mode, f"built product mode is {expected_mode}")

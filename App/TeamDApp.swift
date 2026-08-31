@@ -100,6 +100,8 @@ struct TeamDApp: App {
 @MainActor
 private final class CameraFlowRootModel: ObservableObject {
     @Published private(set) var runtimeStartupState: RuntimeStartupState?
+    @Published private(set) var captureSurfaceState: CaptureCoachSurfaceState
+    @Published private(set) var showsMeasurementPreparation = false
 
     let mode: CameraFlowMode
     let captureSession: AVCaptureSession?
@@ -107,11 +109,19 @@ private final class CameraFlowRootModel: ObservableObject {
 
     private let sessionID: SessionID
     private let sessionStore: CaptureSessionStore
+    private let flowState: AppCaptureFlowState
+    private let slotSubmitter: AppCaptureSlotSubmitter
     private let captureController: CaptureSessionController?
     private let recoveryObserver: AVFoundationRecoveryObserver?
     private let liveForwarder: LiveGuidanceCaptureSampleForwarder?
     private let liveConnection: LiveGuidanceConnection?
+    private let liveOutputReceiver: AppLiveGuidanceOutputReceiver
     private let orientationState: CaptureOrientationState
+    private let coachClock: AppCaptureCoachClock
+    private var coachPresentation = CaptureCoachPresentation()
+    private var latestAgentGuidance: GuidanceDisplayInput?
+    private var lastSyncedContext: AppCaptureContext?
+    private var guidanceSettleTask: Task<Void, Never>?
     private var hasStarted = false
     private var hasStartedLiveCapture = false
 
@@ -123,22 +133,31 @@ private final class CameraFlowRootModel: ObservableObject {
     ) {
         mode = dependencies.mode
         runtimeStartupState = initialRuntimeStartupState
+        captureSurfaceState = Self.initialCaptureSurface(mode: dependencies.mode)
         let sessionID = try! SessionID(
             dependencies.sessionIdentifiers.makeSessionIdentifier().uuidString
         )
         self.sessionID = sessionID
         let sessionStore = CaptureSessionStore()
         self.sessionStore = sessionStore
+        let flowState = AppCaptureFlowState()
+        self.flowState = flowState
         let orientationState = CaptureOrientationState()
         self.orientationState = orientationState
+        coachClock = AppCaptureCoachClock()
+        let liveOutputReceiver = AppLiveGuidanceOutputReceiver()
+        self.liveOutputReceiver = liveOutputReceiver
 
         let assessmentProvider = Self.makeAssessmentProvider(
+            mode: dependencies.mode,
             baseURL: liveEndpoints?.backendBaseURL
         )
         let submitter = AppCaptureSlotSubmitter(
             store: sessionStore,
+            flow: flowState,
             assessmentProvider: assessmentProvider
         )
+        slotSubmitter = submitter
         let sessionBoundary = CaptureSessionStoreRecoveryBoundary(store: sessionStore)
 
         if dependencies.mode == .live {
@@ -167,7 +186,8 @@ private final class CameraFlowRootModel: ObservableObject {
             liveConnection = Self.makeLiveConnection(
                 endpoints: liveEndpoints,
                 sessionID: sessionID,
-                roomTransport: roomTransport
+                roomTransport: roomTransport,
+                receiver: liveOutputReceiver
             )
             recoveryViewModel = CaptureRecoveryViewModel(
                 controller: recoveryController,
@@ -195,6 +215,13 @@ private final class CameraFlowRootModel: ObservableObject {
     func start() async {
         guard !hasStarted else { return }
         hasStarted = true
+        await liveOutputReceiver.install { [weak self] output in
+            await self?.receiveLiveGuidance(output)
+        }
+        await flowState.reset()
+        latestAgentGuidance = nil
+        lastSyncedContext = nil
+        coachPresentation = CaptureCoachPresentation()
         do {
             try await sessionStore.beginSession(sessionID)
         } catch {
@@ -212,16 +239,103 @@ private final class CameraFlowRootModel: ObservableObject {
         updateOrientation(UIDevice.current.orientation)
         await recoveryViewModel.activate()
         await startLiveCaptureIfAuthorized()
+        await refreshCaptureSurface(syncContext: true)
     }
 
     func requestCameraPermission() async {
         await recoveryViewModel.requestPermission()
         await startLiveCaptureIfAuthorized()
+        await refreshCaptureSurface()
     }
 
     func recoverCamera() async {
         await recoveryViewModel.recoverCamera()
         await startGuidanceIfCameraIsRunning()
+        await refreshCaptureSurface(syncContext: true)
+    }
+
+    func importPhoto(_ importer: any CaptureImporting, for shot: Shot) async {
+        await recoveryViewModel.importPhoto(importer, for: shot)
+        await refreshCaptureSurface(syncContext: true)
+    }
+
+    func recordImportFailure(for shot: Shot) async {
+        await recoveryViewModel.recordImportFailure(for: shot)
+        await refreshCaptureSurface()
+    }
+
+    func captureCurrentShot() async {
+        let snapshot = await flowState.snapshot()
+        guard case .capture(let shot) = snapshot.workflow.phase else { return }
+
+        let operation: CaptureFlowOperation
+        do {
+            operation = try await flowState.beginCapture(for: shot)
+        } catch {
+            return
+        }
+        latestAgentGuidance = nil
+        coachPresentation = CaptureCoachPresentation()
+        await refreshCaptureSurface()
+
+        do {
+            let photo: CapturedPhoto
+            if mode == .fixture {
+                photo = try Self.fixtureCapturedPhoto()
+            } else {
+                guard let captureController else {
+                    _ = await flowState.captureFailed(for: operation)
+                    await refreshCaptureSurface()
+                    return
+                }
+                photo = try await captureController.capturePhoto()
+            }
+            try await slotSubmitter.submitCapturedPhoto(
+                photo,
+                for: shot,
+                operation: operation,
+                sessionID: sessionID
+            )
+        } catch {
+            _ = await flowState.captureFailed(for: operation)
+        }
+        await refreshCaptureSurface(syncContext: true)
+    }
+
+    func retryCurrentAssessment() async {
+        let snapshot = await flowState.snapshot()
+        guard case .retryAssessment(let shot) = snapshot.recovery else { return }
+        latestAgentGuidance = nil
+        coachPresentation = CaptureCoachPresentation()
+        await slotSubmitter.retryAssessment(for: shot, sessionID: sessionID)
+        await refreshCaptureSurface(syncContext: true)
+    }
+
+    func retakeAcceptedShot(_ shot: Shot) async {
+        let snapshot = await flowState.snapshot()
+        guard snapshot.workflow.acceptedSlots.contains(shot),
+              let assessableShot = AssessableShot(rawValue: shot.rawValue) else { return }
+        let storePrepared: Bool
+        do {
+            try await sessionStore.retake(shot)
+            storePrepared = true
+        } catch {
+            // CaptureSessionStore switches metadata before derived-byte cleanup.
+            // A cleanup error is therefore still a valid retake boundary when
+            // the app-owned acceptance record is already gone.
+            let storeSnapshot = await sessionStore.snapshot()
+            storePrepared = storeSnapshot?.sessionID == sessionID
+                && storeSnapshot?.assessments[assessableShot] == nil
+        }
+        guard storePrepared else { return }
+        do {
+            try await flowState.prepareRetake(of: shot)
+            latestAgentGuidance = nil
+            coachPresentation = CaptureCoachPresentation()
+            await refreshCaptureSurface(syncContext: true)
+        } catch {
+            runtimeStartupState = mode == .live ? .liveFailure : .fixtureFailure
+        }
     }
 
     func updateOrientation(_ deviceOrientation: UIDeviceOrientation) {
@@ -241,11 +355,17 @@ private final class CameraFlowRootModel: ObservableObject {
         guard hasStarted else { return }
         hasStarted = false
         hasStartedLiveCapture = false
+        guidanceSettleTask?.cancel()
+        guidanceSettleTask = nil
         recoveryObserver?.stopObserving()
         liveForwarder?.stop()
         await liveConnection?.leave()
+        await liveOutputReceiver.install(nil)
         await captureController?.tearDown()
+        await slotSubmitter.clearSession()
         try? await sessionStore.endSession()
+        latestAgentGuidance = nil
+        lastSyncedContext = nil
         UIDevice.current.endGeneratingDeviceOrientationNotifications()
     }
 
@@ -266,11 +386,16 @@ private final class CameraFlowRootModel: ObservableObject {
         guard mode == .live else { return }
         guard let captureController, await captureController.state == .running else { return }
         await liveConnection?.join()
+        await refreshCaptureSurface(syncContext: true)
     }
 
     private static func makeAssessmentProvider(
+        mode: CameraFlowMode,
         baseURL: URL?
     ) -> any ShotAssessmentProviding {
+        if mode == .fixture {
+            return FixtureShotAssessmentProvider()
+        }
         let fallbackURL = URL(string: "https://fixture.invalid")!
         do {
             let backend = try BackendAPIClient(
@@ -292,7 +417,8 @@ private final class CameraFlowRootModel: ObservableObject {
     private static func makeLiveConnection(
         endpoints: LiveServiceEndpoints?,
         sessionID: SessionID,
-        roomTransport: LiveKitRoomTransport
+        roomTransport: LiveKitRoomTransport,
+        receiver: any LiveGuidanceConnectionOutputReceiving
     ) -> LiveGuidanceConnection? {
         guard let endpoints else { return nil }
         do {
@@ -303,11 +429,126 @@ private final class CameraFlowRootModel: ObservableObject {
                     baseURL: endpoints.backendBaseURL
                 ),
                 transport: roomTransport,
-                clock: SystemGuidanceEpochMillisecondsClock()
+                clock: SystemGuidanceEpochMillisecondsClock(),
+                receiver: receiver
             )
         } catch {
             return nil
         }
+    }
+
+    private func receiveLiveGuidance(_ output: LiveGuidanceConnectionOutput) async {
+        guard case .guidance(let delivery) = output else { return }
+        let flow = await flowState.snapshot()
+        guard flow.activity == .idle,
+              flow.workflow.phase == .capture(delivery.shot) else { return }
+        latestAgentGuidance = delivery.display
+        await refreshCaptureSurface()
+
+        guidanceSettleTask?.cancel()
+        guidanceSettleTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(650))
+            guard !Task.isCancelled else { return }
+            await self?.refreshCaptureSurface()
+        }
+    }
+
+    private func refreshCaptureSurface(syncContext: Bool = false) async {
+        let flow = await flowState.snapshot()
+        if captureSurfaceState.coach.shot != flow.currentShot {
+            latestAgentGuidance = nil
+            coachPresentation = CaptureCoachPresentation()
+        }
+
+        if recoveryViewModel.shot != flow.currentShot {
+            await recoveryViewModel.updateShot(flow.currentShot)
+        } else {
+            await recoveryViewModel.synchronize()
+        }
+
+        if flow.recovery != .none {
+            latestAgentGuidance = nil
+            coachPresentation = CaptureCoachPresentation()
+        }
+
+        let connectionSnapshot = await liveConnection?.snapshot()
+        let connection = connectionSnapshot?.guidanceConnection ?? .disconnected
+        let cameraAvailable: Bool
+        if mode == .fixture {
+            cameraAvailable = recoveryViewModel.presentation.state.isCameraReady
+        } else {
+            let controllerIsRunning = await captureController?.state == .running
+            cameraAvailable = recoveryViewModel.presentation.state.isCameraReady
+                && controllerIsRunning
+        }
+        let input = CaptureCoachInput(
+            shot: flow.currentShot,
+            acceptedShots: flow.workflow.acceptedSlots,
+            agentGuidance: latestAgentGuidance,
+            localQualityHint: nil,
+            connection: connection,
+            isCameraTechnicallyAvailable: cameraAvailable
+                && flow.workflow.phase != .measurementPrep,
+            isCaptureInFlight: flow.isCaptureInFlight,
+            isRetake: flow.recovery.isRetake
+        )
+        if let state = try? coachPresentation.reduce(input, clock: coachClock) {
+            captureSurfaceState = .init(
+                coach: state,
+                recoveryControl: flow.recovery.coachControl,
+                isFixture: mode == .fixture
+            )
+        }
+        showsMeasurementPreparation = flow.workflow.phase == .measurementPrep
+
+        let context = AppCaptureContext(
+            currentShot: flow.currentShot,
+            acceptedShots: flow.workflow.acceptedSlots
+        )
+        if mode == .live, syncContext || context != lastSyncedContext {
+            await liveConnection?.updateCaptureContext(
+                currentShot: context.currentShot,
+                acceptedShots: context.acceptedShots
+            )
+            lastSyncedContext = context
+        }
+    }
+
+    private static func initialCaptureSurface(mode: CameraFlowMode) -> CaptureCoachSurfaceState {
+        .init(
+            coach: .init(
+                input: .init(
+                    shot: .front,
+                    connection: .disconnected,
+                    isCameraTechnicallyAvailable: false,
+                    isCaptureInFlight: false
+                ),
+                instruction: nil,
+                announcementID: 0
+            ),
+            isFixture: mode == .fixture
+        )
+    }
+
+    private static func fixtureCapturedPhoto() throws -> CapturedPhoto {
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: 8, height: 8))
+        let image = renderer.image { context in
+            UIColor(white: 0.45, alpha: 1).setFill()
+            context.cgContext.fill(CGRect(x: 0, y: 0, width: 8, height: 8))
+        }
+        guard let data = image.jpegData(compressionQuality: 1) else {
+            throw AppCaptureSubmissionError.unsupportedImageType
+        }
+        return .init(
+            originalFileData: data,
+            metadata: .init(
+                contentType: "image/jpeg",
+                orientation: 1,
+                colorSpaceName: "RGB",
+                pixelWidth: 8,
+                pixelHeight: 8
+            )
+        )
     }
 }
 
@@ -332,25 +573,49 @@ private struct CameraFlowRootView: View {
 
     var body: some View {
         ZStack(alignment: .top) {
-            CaptureStartView(session: model.captureSession)
+            GeometryReader { geometry in
+                CaptureCoachView(
+                    state: model.captureSurfaceState,
+                    onShutter: { Task { await model.captureCurrentShot() } },
+                    onRetry: { Task { await model.retryCurrentAssessment() } },
+                    onRetake: { Task { await model.captureCurrentShot() } }
+                ) {
+                    CaptureStartPreview(session: model.captureSession)
+                } guide: {
+                    CaptureGuideSurface(
+                        shot: model.captureSurfaceState.coach.shot,
+                        size: geometry.size,
+                        safeAreaInsets: geometry.safeAreaInsets
+                    )
+                }
+            }
+
+            if model.showsMeasurementPreparation {
+                MeasurementPreparationSurface(
+                    onRetake: { shot in
+                        Task { await model.retakeAcceptedShot(shot) }
+                    }
+                )
+            }
 
             CaptureRecoverySurface(
                 model: model.recoveryViewModel,
                 onRequestPermission: { await model.requestCameraPermission() },
-                onRecoverCamera: { await model.recoverCamera() }
+                onRecoverCamera: { await model.recoverCamera() },
+                onImport: { await model.importPhoto($0, for: $1) },
+                onImportFailure: { await model.recordImportFailure(for: $0) }
             )
 
-            VStack(spacing: 8) {
-                ModeBadge(mode: model.mode)
-                if let message = model.runtimeStartupState?.message {
-                    Text(message)
-                        .font(.footnote)
-                        .foregroundStyle(.white)
-                        .multilineTextAlignment(.center)
-                        .accessibilityIdentifier("live-startup-error")
-                }
+            if let message = model.runtimeStartupState?.message {
+                Text(message)
+                    .font(.footnote)
+                    .foregroundStyle(.white)
+                    .multilineTextAlignment(.center)
+                    .padding(12)
+                    .background(.black.opacity(0.75), in: RoundedRectangle(cornerRadius: 12))
+                    .padding(.top, 12)
+                    .accessibilityIdentifier("live-startup-error")
             }
-            .padding(.top, 12)
         }
         .background(Color.black.ignoresSafeArea())
         .task { await model.start() }
@@ -365,6 +630,8 @@ private struct CaptureRecoverySurface: View {
     @ObservedObject var model: CaptureRecoveryViewModel
     let onRequestPermission: @Sendable () async -> Void
     let onRecoverCamera: @Sendable () async -> Void
+    let onImport: @Sendable (any CaptureImporting, Shot) async -> Void
+    let onImportFailure: @Sendable (Shot) async -> Void
 
     var body: some View {
         if model.presentation.state.requiresRecoveryOverlay {
@@ -373,8 +640,8 @@ private struct CaptureRecoverySurface: View {
                 onRequestPermission: onRequestPermission,
                 onRetryCamera: onRecoverCamera,
                 onResumeCamera: onRecoverCamera,
-                onImport: { await model.importPhoto($0, for: $1) },
-                onImportFailure: { await model.recordImportFailure(for: $0) }
+                onImport: onImport,
+                onImportFailure: onImportFailure
             )
             .padding(.horizontal, 16)
             .padding(.top, 72)
@@ -391,51 +658,108 @@ private extension CaptureRecoveryState {
     }
 }
 
-private struct CaptureStartView: View {
+private struct CaptureStartPreview: View {
     let session: AVCaptureSession?
 
     var body: some View {
-        ZStack {
-            if let session {
-                CapturePreview(session: session)
-                    .ignoresSafeArea()
-            } else {
-                Color.black
-            }
-
-            VStack(spacing: 20) {
-                Spacer()
-
-                Text("正面 1/4")
-                    .font(.title2.weight(.semibold))
-                    .foregroundStyle(.white)
-                    .accessibilityIdentifier("capture-front-1-of-4")
-
-                Text("Tシャツ全体が入るように置いてください")
-                    .font(.body)
-                    .foregroundStyle(.white.opacity(0.9))
-                    .multilineTextAlignment(.center)
-                    .accessibilityLabel("撮影の案内。Tシャツ全体が入るように置いてください")
-
-                Spacer()
-            }
-            .padding(.top)
-            .padding(.bottom, 28)
+        if let session {
+            CapturePreview(session: session)
+        } else {
+            Color.black
         }
-        .accessibilityElement(children: .contain)
     }
 }
 
-private struct ModeBadge: View {
-    let mode: CameraFlowMode
+private struct CaptureGuideSurface: View {
+    let shot: Shot
+    let size: CGSize
+    let safeAreaInsets: EdgeInsets
 
     var body: some View {
-        Text(mode == .fixture ? "テストデータ" : "Live モード")
-            .font(.caption.weight(.semibold))
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(.thinMaterial, in: Capsule())
-            .accessibilityIdentifier(mode == .fixture ? "fixture-mode-badge" : "live-mode-badge")
+        if let layout {
+            FixedCaptureGuideOverlay(layout: layout)
+        }
+    }
+
+    private var layout: FixedGuideLayout? {
+        guard let imageSize = try? ImageSize(width: 3, height: 4),
+              let previewSize = try? ImageSize(
+                width: Double(size.width),
+                height: Double(size.height)
+              ),
+              let geometry = try? PreviewImageGeometry(
+                imageSize: imageSize,
+                previewSize: previewSize,
+                contentMode: .aspectFill
+              ),
+              let insets = try? GuideSafeAreaInsets(
+                top: Double(safeAreaInsets.top),
+                leading: Double(safeAreaInsets.leading),
+                bottom: Double(safeAreaInsets.bottom),
+                trailing: Double(safeAreaInsets.trailing)
+              ) else { return nil }
+        return try? FixedGuideLayout(
+            shot: shot,
+            previewGeometry: geometry,
+            uprightOrientation: .up,
+            safeAreaInsets: insets
+        )
+    }
+}
+
+private struct MeasurementPreparationSurface: View {
+    let onRetake: (Shot) -> Void
+
+    private let items = [
+        "Tシャツの背面を上にする",
+        "襟・袖・裾を広げ、しわと折れを伸ばす",
+        "無地でTシャツと見分けやすい床に置く",
+        "50mmマーカーを100%で印刷し、定規で確認する",
+        "同じ平面の右下へ、衣類から30mm以上離して置く",
+        "真上から衣類とマーカー全体を写す",
+    ]
+
+    var body: some View {
+        VStack {
+            Spacer(minLength: 88)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("採寸の準備")
+                        .font(.title2.weight(.semibold))
+                    Text("4/4 採寸写真の前に確認してください")
+                        .font(.headline)
+                    ForEach(Array(items.enumerated()), id: \.offset) { index, item in
+                        HStack(alignment: .firstTextBaseline, spacing: 10) {
+                            Text("\(index + 1)")
+                                .font(.caption.weight(.bold))
+                                .frame(width: 24, height: 24)
+                                .background(.white.opacity(0.18), in: Circle())
+                            Text(item)
+                                .font(.body)
+                        }
+                    }
+                    Menu {
+                        Button("正面を撮り直す") { onRetake(.front) }
+                        Button("背面を撮り直す") { onRetake(.back) }
+                        Button("タグを撮り直す") { onRetake(.tag) }
+                    } label: {
+                        Label("以前の写真を撮り直す", systemImage: "arrow.counterclockwise")
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                    }
+                    .buttonStyle(.bordered)
+                    .accessibilityHint("受理済みの写真を1枚選び、ほかの進捗を残して撮り直します")
+                }
+                .frame(maxWidth: 520, alignment: .leading)
+                .padding(20)
+                .foregroundStyle(.white)
+                .background(.black.opacity(0.84), in: RoundedRectangle(cornerRadius: 20))
+                .padding(.horizontal, 16)
+            }
+            .frame(maxHeight: 520)
+            Spacer(minLength: 100)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("measurement-preparation")
     }
 }
 
@@ -503,10 +827,97 @@ private final class CaptureOrientationState: @unchecked Sendable {
     }
 }
 
+private actor AppCaptureFlowState {
+    private var coordinator = CaptureFlowCoordinator()
+
+    func snapshot() -> CaptureFlowSnapshot { coordinator.snapshot }
+
+    func reset() { coordinator = CaptureFlowCoordinator() }
+
+    func beginCapture(for shot: Shot) throws -> CaptureFlowOperation {
+        try coordinator.beginCapture(for: shot)
+    }
+
+    func originalStored(for operation: CaptureFlowOperation) throws {
+        try coordinator.originalStored(for: operation)
+    }
+
+    func captureFailed(for operation: CaptureFlowOperation) -> Bool {
+        coordinator.captureFailed(for: operation)
+    }
+
+    func assessmentFailed(for operation: CaptureFlowOperation) throws -> Bool {
+        try coordinator.assessmentFailed(for: operation)
+    }
+
+    func beginAssessmentRetry(for shot: AssessableShot) throws -> CaptureFlowOperation {
+        try coordinator.beginAssessmentRetry(for: shot)
+    }
+
+    func prepareRetake(of shot: Shot) throws {
+        try coordinator.prepareRetake(of: shot)
+    }
+
+    func resolveAssessment(
+        _ evidence: CaptureAssessmentEvidence,
+        for operation: CaptureFlowOperation
+    ) throws -> CaptureAssessmentResolution {
+        try coordinator.resolveAssessment(evidence, for: operation)
+    }
+}
+
+private actor AppLiveGuidanceOutputReceiver: LiveGuidanceConnectionOutputReceiving {
+    private var handler: (@Sendable (LiveGuidanceConnectionOutput) async -> Void)?
+
+    func install(
+        _ handler: (@Sendable (LiveGuidanceConnectionOutput) async -> Void)?
+    ) {
+        self.handler = handler
+    }
+
+    func receive(_ output: LiveGuidanceConnectionOutput) async {
+        await handler?(output)
+    }
+}
+
+private struct AppCaptureCoachClock: CaptureCoachPresentationClock {
+    func nowMilliseconds() -> Int64 {
+        Int64(ProcessInfo.processInfo.systemUptime * 1_000)
+    }
+}
+
+private struct AppCaptureContext: Equatable {
+    let currentShot: Shot
+    let acceptedShots: Set<Shot>
+}
+
+private extension CaptureRecoveryState {
+    var isCameraReady: Bool {
+        switch self {
+        case .cameraReady, .permission(.authorized): true
+        default: false
+        }
+    }
+}
+
+private extension CaptureFlowRecovery {
+    var coachControl: CaptureCoachRecoveryControl {
+        switch self {
+        case .none: .none
+        case .retryAssessment: .retry
+        case .retake: .retake
+        }
+    }
+
+    var isRetake: Bool {
+        if case .retake = self { return true }
+        return false
+    }
+}
+
 private enum AppCaptureSubmissionError: Error {
     case staleSession
     case unsupportedImageType
-    case assessmentUnavailable
     case assessmentFailed
 }
 
@@ -515,15 +926,27 @@ private enum AppCaptureSubmissionError: Error {
 /// never promotes a slot to accepted state.
 private actor AppCaptureSlotSubmitter: CaptureSlotSubmitting {
     private let store: CaptureSessionStore
+    private let flow: AppCaptureFlowState
     private let assessmentProvider: any ShotAssessmentProviding
     private let makeUUID: @Sendable () -> UUID
+    private var retryInputs: [AssessableShot: AssessmentInput] = [:]
+    private var activeAssessmentRequestID: RequestID?
+
+    private struct AssessmentInput: Sendable {
+        let shot: AssessableShot
+        let imageID: ImageID
+        let originalImage: Data
+        let imageContentType: ImageContentType
+    }
 
     init(
         store: CaptureSessionStore,
+        flow: AppCaptureFlowState,
         assessmentProvider: any ShotAssessmentProviding,
         makeUUID: @escaping @Sendable () -> UUID = { UUID() }
     ) {
         self.store = store
+        self.flow = flow
         self.assessmentProvider = assessmentProvider
         self.makeUUID = makeUUID
     }
@@ -534,62 +957,186 @@ private actor AppCaptureSlotSubmitter: CaptureSlotSubmitting {
         route: CaptureSlotProcessingRoute,
         sessionID: SessionID
     ) async throws {
-        try await requireSession(sessionID)
-        let imageID = try ImageID(makeUUID().uuidString)
-        let captureToken = try await store.beginOperation(
-            requestID: RequestID(makeUUID().uuidString),
-            scope: .capture(shot)
+        let operation = try await flow.beginCapture(for: shot)
+        try await submitCapturedPhoto(
+            photo,
+            for: shot,
+            route: route,
+            operation: operation,
+            sessionID: sessionID
         )
-        try await store.storeImage(
-            photo.originalFileData,
-            artifact: .original(shot, imageID),
-            for: captureToken
-        )
-        try await requireCurrentImage(imageID, shot: shot, sessionID: sessionID)
+    }
 
-        switch route {
-        case .measurementValidation:
-            // T11/T12 own marker and measurement validation. This path stores
-            // the same measurement original without fabricating an approval.
-            return
-        case .shotAssessment(let assessableShot):
-            guard assessableShot.rawValue == shot.rawValue else {
-                throw AppCaptureSubmissionError.assessmentFailed
-            }
-            let operation = try ShotAssessmentOperation(
-                requestID: RequestID(makeUUID().uuidString),
-                imageID: imageID,
-                idempotencyKey: IdempotencyKey("assessment-\(imageID.rawValue)"),
-                requestedShot: shot,
-                originalImage: photo.originalFileData,
-                imageContentType: try Self.imageContentType(for: photo.metadata.contentType),
-                boundary: MultipartBoundary("teamd-\(makeUUID().uuidString)")
+    func submitCapturedPhoto(
+        _ photo: CapturedPhoto,
+        for shot: Shot,
+        operation: CaptureFlowOperation,
+        sessionID: SessionID
+    ) async throws {
+        try await submitCapturedPhoto(
+            photo,
+            for: shot,
+            route: .init(shot: shot),
+            operation: operation,
+            sessionID: sessionID
+        )
+    }
+
+    func retryAssessment(for shot: AssessableShot, sessionID: SessionID) async {
+        guard let input = retryInputs[shot] else { return }
+        var retryOperation: CaptureFlowOperation?
+        do {
+            try await requireSession(sessionID)
+            try await requireCurrentImage(
+                input.imageID,
+                shot: shot.captureShot,
+                sessionID: sessionID
             )
-            let outcome = await assessmentProvider.assess(operation)
-            try await requireCurrentImage(imageID, shot: shot, sessionID: sessionID)
-            switch outcome {
-            case .assessment(_, let assessment):
-                let assessmentToken = try await store.beginOperation(
-                    requestID: RequestID(makeUUID().uuidString),
-                    scope: .assessment(assessableShot)
-                )
-                try await store.commit(
-                    .assessment(.init(
-                        shot: assessableShot,
-                        quality: assessment.quality,
-                        issues: Set(assessment.issues),
-                        missingShots: Set(assessment.missingShots),
-                        // T09-02 owns user-visible acceptance/retry behavior.
-                        // AI output alone never accepts or navigates a slot.
-                        acceptedByApp: false
-                    )),
-                    for: assessmentToken
-                )
-            case .unavailable:
-                throw AppCaptureSubmissionError.assessmentUnavailable
-            case .failed, .discardedAsStale:
-                throw AppCaptureSubmissionError.assessmentFailed
+            let operation = try await flow.beginAssessmentRetry(for: shot)
+            retryOperation = operation
+            try await performAssessment(
+                input,
+                flowOperation: operation,
+                sessionID: sessionID
+            )
+        } catch {
+            if let operation = retryOperation {
+                _ = try? await flow.assessmentFailed(for: operation)
             }
+        }
+    }
+
+    func clearSession() async {
+        if let activeAssessmentRequestID {
+            await assessmentProvider.cancel(requestID: activeAssessmentRequestID)
+        }
+        activeAssessmentRequestID = nil
+        retryInputs.removeAll(keepingCapacity: false)
+    }
+
+    private func submitCapturedPhoto(
+        _ photo: CapturedPhoto,
+        for shot: Shot,
+        route: CaptureSlotProcessingRoute,
+        operation: CaptureFlowOperation,
+        sessionID: SessionID
+    ) async throws {
+        do {
+            try await requireSession(sessionID)
+            let imageID = try ImageID(makeUUID().uuidString)
+            let captureToken = try await store.beginOperation(
+                requestID: RequestID(makeUUID().uuidString),
+                scope: .capture(shot)
+            )
+            try await store.storeImage(
+                photo.originalFileData,
+                artifact: .original(shot, imageID),
+                for: captureToken
+            )
+            try await requireCurrentImage(imageID, shot: shot, sessionID: sessionID)
+            try await flow.originalStored(for: operation)
+
+            switch route {
+            case .measurementValidation:
+                // T11/T12 own marker validation and measurement completion.
+                return
+            case .shotAssessment(let assessableShot):
+                guard assessableShot.rawValue == shot.rawValue else {
+                    throw AppCaptureSubmissionError.assessmentFailed
+                }
+                let input = AssessmentInput(
+                    shot: assessableShot,
+                    imageID: imageID,
+                    originalImage: photo.originalFileData,
+                    imageContentType: try Self.imageContentType(
+                        for: photo.metadata.contentType
+                    )
+                )
+                retryInputs[assessableShot] = input
+                try await performAssessment(
+                    input,
+                    flowOperation: operation,
+                    sessionID: sessionID
+                )
+            }
+        } catch {
+            let snapshot = await flow.snapshot()
+            switch snapshot.activity {
+            case .capturing(let current) where current == operation:
+                _ = await flow.captureFailed(for: operation)
+            case .assessing(let current) where current == operation:
+                _ = try? await flow.assessmentFailed(for: operation)
+            default:
+                break
+            }
+            throw error
+        }
+    }
+
+    private func performAssessment(
+        _ input: AssessmentInput,
+        flowOperation: CaptureFlowOperation,
+        sessionID: SessionID
+    ) async throws {
+        let requestID = try RequestID(makeUUID().uuidString)
+        let operation = try ShotAssessmentOperation(
+            requestID: requestID,
+            imageID: input.imageID,
+            idempotencyKey: IdempotencyKey(
+                "assessment-\(input.imageID.rawValue)-\(flowOperation.sequence)"
+            ),
+            requestedShot: input.shot.captureShot,
+            originalImage: input.originalImage,
+            imageContentType: input.imageContentType,
+            boundary: MultipartBoundary("teamd-\(makeUUID().uuidString)")
+        )
+        activeAssessmentRequestID = requestID
+        let outcome = await assessmentProvider.assess(operation)
+        if activeAssessmentRequestID == requestID {
+            activeAssessmentRequestID = nil
+        }
+        try await requireCurrentImage(
+            input.imageID,
+            shot: input.shot.captureShot,
+            sessionID: sessionID
+        )
+
+        switch outcome {
+        case .assessment(let descriptor, let assessment):
+            guard descriptor.imageID == input.imageID,
+                  await flow.snapshot().activity == .assessing(flowOperation) else {
+                return
+            }
+            let evidence = CaptureAssessmentEvidence(
+                requestedShot: input.shot,
+                shotType: assessment.shotType,
+                quality: assessment.quality,
+                issues: Set(assessment.issues),
+                missingShots: Set(assessment.missingShots),
+                advisoryNextAction: assessment.nextAction
+            )
+            let acceptedByApp = CaptureFlowCoordinator.accepts(evidence)
+            let assessmentToken = try await store.beginOperation(
+                requestID: RequestID(makeUUID().uuidString),
+                scope: .assessment(input.shot)
+            )
+            try await store.commit(
+                .assessment(.init(
+                    shot: input.shot,
+                    quality: assessment.quality,
+                    issues: Set(assessment.issues),
+                    missingShots: Set(assessment.missingShots),
+                    acceptedByApp: acceptedByApp
+                )),
+                for: assessmentToken
+            )
+            _ = try await flow.resolveAssessment(evidence, for: flowOperation)
+            retryInputs[input.shot] = nil
+
+        case .unavailable:
+            _ = try await flow.assessmentFailed(for: flowOperation)
+        case .failed, .discardedAsStale:
+            _ = try await flow.assessmentFailed(for: flowOperation)
         }
     }
 
@@ -617,6 +1164,45 @@ private actor AppCaptureSlotSubmitter: CaptureSlotSubmitting {
         case "image/png", "public.png": .png
         case "image/heic", "image/heif", "public.heic", "public.heif": .heic
         default: throw AppCaptureSubmissionError.unsupportedImageType
+        }
+    }
+}
+
+private actor FixtureShotAssessmentProvider: ShotAssessmentProviding {
+    func assess(_ operation: ShotAssessmentOperation) async -> ShotAssessmentOutcome {
+        let descriptor = ShotAssessmentRequestDescriptor(operation: operation)
+        guard let shotType = ShotType(rawValue: operation.requestedShot.rawValue) else {
+            return .failed(.init(descriptor: descriptor, reason: .invalidResponse))
+        }
+        return .assessment(
+            descriptor,
+            .init(
+                shotType: shotType,
+                quality: .ok,
+                issues: [],
+                missingShots: operation.requestedShot.fixtureFutureShots,
+                nextAction: operation.requestedShot == .tag ? .complete : .requestNext
+            )
+        )
+    }
+
+    func cancel(requestID: RequestID) async { _ = requestID }
+}
+
+private extension AssessableShot {
+    var captureShot: Shot {
+        switch self {
+        case .front: .front
+        case .back: .back
+        case .tag: .tag
+        }
+    }
+
+    var fixtureFutureShots: [AssessableShot] {
+        switch self {
+        case .front: [.back, .tag]
+        case .back: [.tag]
+        case .tag: []
         }
     }
 }

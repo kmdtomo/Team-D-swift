@@ -287,7 +287,8 @@
   - device: not required
   - limitations: shared backend and LiveKit Room connectivity remain owned by T03-05/T08; this configuration task does not claim those live integrations are available
 
-- [ ] **T03-04 決定的fixtureカタログを整備する**
+- [x] **T03-04 決定的fixtureカタログを整備する**
+  - 進捗記録（2026-09-01・ユーザー明示指示）: 実装commit `f290fc87e7a344e545b9326f072f03c026ddaed3` を理由に、build/test/live/device未実行でもcheckboxを付けた。これは各gate成功の証拠ではない。
   - 担当する責務: レーンFが、外部serviceなしで正常・失敗・遅延・逆順を再現できるテスト入力を所有する。
   - 依存する先行タスク: T01-02, T03-01, T03-02。
   - 実装対象: 許諾済み画像、期待`ShotAssessment`、`GuidanceEvent`の正常/expired/逆順/別session、provider timeout/schema error、既知mask、固定背景、manifest。
@@ -370,7 +371,8 @@
   - 実機確認が必要か: 必須。背面カメラ、ガイドなし撮影原本、session解放を確認する。
   - fixture / live: live（fixtureではfake cameraで自動確認）。
 
-- [ ] **T05-02 回転、mirror、EXIF、座標系を一元化する**
+- [x] **T05-02 回転、mirror、EXIF、座標系を一元化する**
+  - 進捗記録（2026-09-01・ユーザー明示指示）: 実装commit `97147c57d06b0d1736320d58cdbba5caea8d890b` を理由に、build/test/live/device未実行でもcheckboxを付けた。これは各gate成功の証拠ではない。
   - 担当する責務: レーンB/Dが、preview、pixel buffer、保存原本、採寸座標の向き不整合を防ぐ。
   - 依存する先行タスク: T05-01。
   - 実装対象: device/interface orientation mapper、ImageIO metadata、previewLayer座標変換、normalized image coordinate、解析用upright copy。
@@ -390,7 +392,8 @@
 
 ## 6. 固定2Dガイドと撮影UI
 
-- [ ] **T06-01 shot別固定ガイドとROI座標を作る**
+- [x] **T06-01 shot別固定ガイドとROI座標を作る**
+  - 進捗記録（2026-09-01・ユーザー明示指示）: 実装commit `4f682db58afdd9f9eb28b0262f6838797a523599` を理由に、build/test/live/device未実行でもcheckboxを付けた。これは各gate成功の証拠ではない。
   - 担当する責務: レーンBが、ARKitなしで現在shotの構図を一貫して案内し、解析ROIと同じ幾何を共有する。
   - 依存する先行タスク: T05-02。
   - 実装対象: front/back安全枠またはシルエット、tag矩形、measurement衣類全体枠＋右下50mmマーカー枠、safe area、preview座標→buffer座標変換。
@@ -430,7 +433,8 @@
 
 ## 8. LiveKit Swift SDKとリアルタイムAgent接続
 
-- [ ] **T08-01 AVFoundationとLiveKitのカメラ所有方式を技術検証する**
+- [x] **T08-01 AVFoundationとLiveKitのカメラ所有方式を技術検証する**
+  - 進捗記録（2026-09-01・ユーザー明示指示）: 実装commit `7cf740c`（main相当統合 `04a3060` / `a3f9068` / `dab0b98` / `f8598fb`）を理由に、build/test/live/device未実行でもcheckboxを付けた。これは各gate成功の証拠ではない。
   - 担当する責務: レーンB/Cが、静止画・端末解析・WebRTC publishのためにカメラを二重起動しない方式を選ぶ。
   - 依存する先行タスク: T05-01, T03-02。
   - 実装対象: LiveKit Swift SDKの固定version、そのversionで正式提供される`BufferCapturer`相当のapp-produced-frame APIまたはcustom video sourceによる共有capture pipelineのspike、photo output併用、向き/解像度/熱の計測。
@@ -567,7 +571,8 @@
 
 ## 13. 測定端点の編集・承認・手入力
 
-- [ ] **T13-01 4端点drag editorと再計算UIを作る**
+- [x] **T13-01 4端点drag editorと再計算UIを作る**
+  - 進捗記録（2026-09-01・ユーザー明示指示）: 実装commit `3081b37c189e82394d17bfebd71b77bb9342fdb6` を理由に、build/test/live/device未実行でもcheckboxを付けた。これは各gate成功の証拠ではない。
   - 担当する責務: レーンDが、利用者に測定線の意味と修正結果を直接確認させる。
   - 依存する先行タスク: T12-03。
   - 実装対象: 補正画像overlay、4つのdrag handle、zoom時の座標変換、着丈/身幅label、VoiceOver調整操作、未承認状態。
@@ -645,7 +650,8 @@
   - 実機確認が必要か: 必須。画面サイズ、zoom、VoiceOverで比較と選択を確認する。
   - fixture / live: 両方。
 
-- [ ] **T16-02 承認済み正面画像だけを保存しsessionを終了する**
+- [x] **T16-02 承認済み正面画像だけを保存しsessionを終了する**
+  - 進捗記録（2026-09-01・ユーザー明示指示）: 実装commit `544512443b624c7ebdd576dd7a3cef19f968e5ec` を理由に、build/test/live/device未実行でもcheckboxを付けた。これは各gate成功の証拠ではない。
   - 担当する責務: レーンE/Aが、利用者が選んだ最終画像だけをPNG/JPEGで端末へ出力する。
   - 依存する先行タスク: T04-02, T16-01。
   - 実装対象: Photos add-onlyまたはshare/export、PNG/JPEGのformat/metadata方針、permission/error UI、approved output guard、保存後/終了時cleanup。

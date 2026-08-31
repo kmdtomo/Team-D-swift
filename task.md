@@ -3,7 +3,7 @@
 ## 0. この計画の前提
 
 - 参照元は [`neko-jpg/Team-D`](https://github.com/neko-jpg/Team-D) の `44065d41e8906d34e5d8e11d7cd4cc14b25d17f2`（2026-08-31 18:38 JST時点の`main`）に固定する。参照元は読み取り専用とし、変更・commit・pushしない。
-- 利用者向けの振る舞いは参照元の OpenSpec `specs/`、受け入れ条件は `requirements.md`、API・OSS境界は `architecture.md` を正とする。ただしWeb固有の実装選択は継承しない。矛盾が見つかった場合は、要件を変更せず契約差分として記録し、解消するまで実装を進めない。
+- 利用者向けの振る舞いは参照元の OpenSpec `specs/`、受け入れ条件は `requirements.md`、API・OSS境界は `architecture.md` を調査根拠とする。OpenSpecは参照元だけで維持し、Swiftリポジトリに`openspec/`やその運用を持ち込まない。Web固有の実装選択は継承しない。矛盾が見つかった場合は、要件を変更せず本`task.md`内に契約差分として記録し、解消するまで該当実装を進めない。
 - このファイルのチェックは、既存Web版の完了状態と無関係に**すべて未完了から開始**する。Web版は並行して維持する。
 - 対象は平置きの半袖クルーネックTシャツ1着、必須写真は `front → back → tag → measurement` の4枚、採寸項目は着丈と身幅だけとする。
 - UIはSwiftUI、カメラはAVFoundation、非同期処理はSwift Concurrency、通信はURLSession、ライブ映像はLiveKit Swift SDK、画像処理はVision/Core Image/Accelerate/ImageIO/simd、合成はCore ImageまたはCore Graphics、テストはSwift Testing/XCTest/XCUITestを第一候補とする。
@@ -47,7 +47,7 @@
 
 ### 移行境界
 
-引き継いでよいのは、確定要件、有限コードとAPIの意味、座標・幾何の定義、テスト期待値、利用許諾を確認できたfixture、プラットフォーム非依存の数式と状態ガードだけである。React/React DOM、Vite/TypeScript/Zod、`useReducer`実装、`getUserMedia`、`HTMLVideoElement`、Canvas、Blob、object URL、Webのframe callback、Web Worker、OpenCV.js/WASM、`object-fit`変換、Safari/page lifecycle対応、Node.js baseline API、Webテスト/build/CSS/Storybook、不採用OSSはコピーしない。backendをSwiftへ移植するタスクも作らない。
+引き継いでよいのは、確定要件、有限コードとAPIの意味、座標・幾何の定義、テスト期待値、利用許諾を確認できたfixture、プラットフォーム非依存の数式と状態ガードだけである。計画段階でSwiftリポジトリへ取り出す成果物は本`task.md`だけとし、参照元のOpenSpec・要件文書・Web実装はコピーしない。React/React DOM、Vite/TypeScript/Zod、`useReducer`実装、`getUserMedia`、`HTMLVideoElement`、Canvas、Blob、object URL、Webのframe callback、Web Worker、OpenCV.js/WASM、`object-fit`変換、Safari/page lifecycle対応、Node.js baseline API、Webテスト/build/CSS/Storybook、不採用OSSはコピーしない。backendをSwiftへ移植するタスクも作らない。
 
 ## 作業レーンと競合回避
 
@@ -74,9 +74,9 @@
 - [ ] **T01-01 参照元snapshotと要件トレーサビリティを固定する**
   - 担当する責務: レーンAが、参照元commitとSwift版へ継ぐ要件・受け入れ条件を一意に追跡できるようにする。
   - 依存する先行タスク: なし。
-  - 実装対象: `docs/migration/source-manifest.md`相当のsnapshot記録、OpenSpec/requirements/architectureからSwiftタスクへの対応表、未解決差分一覧。
-  - 完了条件: source repo URLとcommit SHAが固定され、全受け入れ条件が少なくとも1つの本ファイル内タスクへ紐付き、現行3slot実装を正本にしないことが明記されている。
-  - 自動テスト方法: CIでmanifestのSHA形式、参照リンク、受け入れ条件IDの重複・未割当をlintする。
+  - 実装対象: 本`task.md`内のsnapshot記録、参照元OpenSpec/requirements/architectureからSwiftタスクへの対応、未解決差分一覧。別のOpenSpecや移行manifestは作成しない。
+  - 完了条件: source repo URLとcommit SHAが本`task.md`に固定され、全受け入れ条件が少なくとも1つの本ファイル内タスクへ紐付き、現行3slot実装を正本にしないことが明記され、Swiftリポジトリ内に`openspec/`が存在しない。
+  - 自動テスト方法: CIで本`task.md`のSHA形式、参照リンク、受け入れ条件IDの重複・未割当、`openspec/`非存在をlintする。
   - 実機確認が必要か: 不要。
   - fixture / live: 両方の設計境界を確認する。
 

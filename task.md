@@ -78,16 +78,17 @@
 |---|---|---|
 | `planned` | 未着手 | `[ ]` |
 | `in_progress` | ownerが実装・focused testを進行中 | `[ ]` |
-| `implementation_ready` | 分離実装とfocused testは完了し、統合・live・実機証跡を待つ | `[ ]` |
+| `code_ready_unverified` | 実装とテストコードをcommit済みだが、build/testは最終検証まで未実行 | `[ ]` |
+| `implementation_ready` | 最終検証で対象buildと自動テストが成功し、統合・live・実機証跡を待つ | `[ ]` |
 | `integration_ready` | 必要な他レーンとの接続確認まで完了し、残る受け入れgateを待つ | `[ ]` |
 | `accepted` | 全完了条件と必要なfixture/live/実機証跡が揃った | `[x]` |
 | `blocked` | 欠けている具体的成果物、owner、解除条件を記録済み | `[ ]` |
 
-- 各並列sliceは開始時にtask ID・lane・参照artifact/version・所有file・最後に実行するauthoritative verification command・未統合gateを明示する。コードとfocused testをすべて書き終えた候補SHAに対し、task ownerが最後にそのcommandを1回だけ実行し、成功したら`implementation_ready`とする。
-- 実装途中の小編集、subcommit、review指摘ごとに成功buildを挟まない。失敗runは原因となるcode/config/test変更後だけ再実行する。同じ候補SHAの成功結果は親AI・監査AI・integration ownerが再利用し、別scratchで再buildしない。再実行する場合は、SHA/依存/project/contract/testの変更または証跡不備という具体的理由を記録する。
-- 影響packageの全suiteとapp integration buildは複数タスクを統合するwaveごとに1回、全XCUITestは動作可能な縦スライスまたはT17/T19、clean clone・長時間性能・実機matrix・live end-to-endは該当Milestoneと最終受け入れで実行する。
-- 重い`xcodebuild`、全package `swift test`、clean build、XCUITestはrepository全体で同時に1件だけ実行する。各taskはscratch/DerivedData pathを1つだけ再利用し、authoritative result記録後に再生成可能なscratchを削除する。同じ未変更範囲へ複数workerがscratchを分けて重複検証しない。
-- 並列workerは原則1タスクID・1レーン・専用branch/worktreeを使い、production変更とfocused testを1〜2個の意味あるcommit（必要時のみ最大3個）にまとめる。workerは`task.md`や共有project fileを更新せず、integration ownerが競合確認、wave test、証跡、checkboxを直列に統合する。
+- Phase 1は実装専用とする。各並列sliceはtask ID・lane・参照artifact/version・所有file・最終検証で実行すべきtest・未統合gateを明示し、production変更とテストコードを1〜2個の意味あるcommit（必要時のみ最大3個）にまとめる。workerは`swift build`、`swift test`、`xcodebuild`、XCUITest、app起動、clean buildなどcompile/linkを伴うcommandを実行せず、build artifactを生成しない。source-only lint、schema/doc検証、secret scan、`git diff --check`だけは許可する。
+- 子workerは候補SHA、変更file、書いたが未実行のtest、残るgateを返して`code_ready_unverified`で終了する。`task.md`や共有project fileは更新せず、親AIがcommit済み候補をbuildなしで統合して次の競合しないtaskを継続的に割り当てる。`code_ready_unverified`をbuild済み・test済み・動作済みと表現してはならない。
+- Phase 2は、外部要因でblockedなものを除く全ローカル実装が`code_ready_unverified`になった後にだけ開始する。1つのcleanな統合worktree、1つの再利用可能なscratch/DerivedData root、1人のbuild検証・修正ownerを使い、他workerは同じworktreeを編集しない。
+- 検証ownerは統合diff全体をreviewし、package/app compile、focused/full test、contract/fixture test、app integration build、XCUITest、指定されたclean clone・性能・実機・live gateの順に検証する。compiler/linker error、必須test failure、必須受け入れ条件違反だけを`P0`として修正し、変更後にだけ再実行する。`P1`〜`P3`は小課題として記録するだけでPhase 2を延長しない。
+- 最終統合SHA、Xcode/Swift/依存version、commandと結果、fixture/live/device証跡、残る外部gateを記録してから、各taskを`implementation_ready`、`integration_ready`、または`accepted`へ進める。`[x]`は従来どおり全完了条件と必要証跡が揃った場合だけとする。記録後に再生成可能なscratch/DerivedData/test resultを削除する。
 
 ## 1. 既存資産の棚卸しと移行境界
 

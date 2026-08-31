@@ -10,7 +10,7 @@ Advance the Swift client in small, verifiable task units without confusing parti
 ## Start a work unit
 
 1. Read root `AGENTS.md`, `requirements.md`, and the relevant `task.md` section.
-2. Name the task ID, lane, dependencies, implementation target, required test mode, and device gate. Record the upstream artifact/version being used, owned files, the single final authoritative verification command, and any integration, live, device, or acceptance gates intentionally left open.
+2. Name the task ID, lane, dependencies, implementation target, required test mode, and device gate. Record the upstream artifact/version being used, owned files, tests to author for deferred verification, and any integration, live, device, or acceptance gates intentionally left open.
 3. Classify each predecessor as a start, integration, or acceptance dependency. An unchecked predecessor is not itself a start blocker: continue separable work when the required contract, protocol, finite type, fixture, golden payload, fake, expected image, or approved technical decision is stable. Run the T11 Apple-framework measurement M0 early, while keeping its physical-corpus evidence mandatory for the adoption decision.
 4. Inspect the current worktree and preserve user or parallel-agent changes.
 5. Identify the smallest production change and its focused automated evidence before editing.
@@ -37,13 +37,14 @@ When the user asks this task to use subagents or parallelize delivery, use a sha
 - Default to one parent and up to three direct implementation subagents when four concurrency slots are available. Use fewer children when fewer conflict-free work units exist; an idle slot is cheaper than file conflicts or duplicate work.
 - Do not let children spawn grandchildren. Do not create or manage peer Codex tasks as a substitute for child agents. Parallel workers for this plan must be descendants of the current parent only.
 - Prefer `gpt-5.6-sol` with `high` reasoning for the parent when model choice is available; reserve `xhigh` for genuinely difficult architecture, integration, or `P0` decisions. Prefer `gpt-5.6-terra` with `medium` reasoning for implementation children. Preserve an explicit user model choice over these defaults.
-- The parent owns task selection, dependency/artifact checks, lane and file ownership, shared contracts, `project.pbxproj` and scheme/package integration, the heavy-command single-flight queue, one `P0`-only review pass, integration commits, verification evidence, and `task.md` updates.
-- Each child receives exactly one task ID and lane at a time, an upstream commit, an exclusive file set, a dedicated branch/worktree, the required test mode and gate, and one final authoritative verification command. The child normally returns one or two meaningful commits, using a third only when separation is necessary.
-- Children must not edit `task.md`, shared project files, package locks, shared schemas, or root navigation unless the parent explicitly assigns that ownership. They return the candidate SHA, changed files, verification result, and remaining integration/live/device gates.
-- Children implement and write focused tests concurrently, but heavy builds and full test commands remain repository-wide single-flight. The parent reuses the child's successful final-SHA evidence and does not repeat the same build in another scratch path.
-- Do not reserve a child as a standing reviewer. The parent performs the single bounded review and sends work back only for `P0`; `P1` through `P3` do not consume another child pass.
-- When a child reaches `implementation_ready` but waits for device, live, credential, physical-corpus, or another acceptance gate, end that child work unit and immediately reuse the slot for the next non-conflicting local task. Collect device/live checks into their named integration or acceptance waves.
-- Merge ready children in small integration waves. Run one affected app/package integration verification per wave, update evidence centrally, then dispatch the next conflict-free tasks without waiting for unrelated checkboxes.
+- The parent owns task selection, dependency/artifact checks, lane and file ownership, shared contracts, `project.pbxproj` and scheme/package integration, candidate integration, final verification dispatch, verification evidence, and `task.md` updates.
+- Each child receives exactly one task ID and lane at a time, an upstream commit, an exclusive file set, a dedicated branch/worktree, tests to author, and the required fixture/live/device gates. The child normally returns one or two meaningful commits, using a third only when separation is necessary.
+- Children must not edit `task.md`, shared project files, package locks, shared schemas, or root navigation unless the parent explicitly assigns that ownership. They return the candidate SHA, changed files, tests authored but not run, and remaining integration/live/device gates.
+- During the implementation phase, children do not run `swift build`, `swift test`, `xcodebuild`, XCUITest, app launch, clean build, or any command that compiles or links the product. They may run source-only formatting, schema/document lint, `git diff --check`, and secret/static scans that create no build artifacts.
+- During Phase 1, do not reserve a child as a standing reviewer. The parent checks ownership, scope, and obvious `P0` risks only; defer the full integrated review to the Phase 2 verification owner. `P1` through `P3` do not consume another child pass.
+- When a child reaches `code_ready_unverified`, end that child work unit and immediately reuse the slot for the next non-conflicting local task. Device, live, credential, physical-corpus, and acceptance gates remain recorded without occupying an implementation slot.
+- Integrate candidate commits continuously without running builds. After every non-blocked local implementation task is `code_ready_unverified`, stop implementation fan-out and start the dedicated final verification phase.
+- In final verification, assign one direct child as the exclusive verification-and-fix owner of one clean integrated worktree. Prefer `gpt-5.6-sol` with `high` reasoning when available. Other children must not write to that worktree; they may perform bounded read-only diagnosis only when the verification owner requests a specific failure analysis.
 
 ## Implement within the lane
 
@@ -55,21 +56,25 @@ When the user asks this task to use subagents or parallelize delivery, use a sha
 - Do not add Swift versions of missing FastAPI/Agent/rembg responsibilities, hidden fixture fallbacks, placeholder success, or production secrets.
 - Add the relevant test in the same change instead of postponing all testing to T17.
 
-## Verify in layers
+## Separate implementation from final verification
 
-Select the least expensive meaningful layer for the task, then broaden only at the integration cadence:
+Use two explicit phases.
 
-1. Swift Testing/XCTest for domain state, codecs, geometry, image math, cancellation, and failure behavior.
-2. Contract/golden tests for API and fixture changes.
-3. Integration tests for provider composition and session cleanup.
-4. XCUITest for user-visible flow, recovery, and approval.
-5. Physical-device checks required by the task.
+### Phase 1: implementation sweep
 
-Write focused tests during implementation without running a successful build after every small edit, subcommit, or review comment. When the task's code and focused tests are complete, the task owner runs one authoritative verification command against the final candidate SHA. That one invocation includes the affected target build and focused tests; if multiple task-required configurations exist, run them sequentially inside the same invocation.
+- Implement production code and author the focused Swift Testing/XCTest, contract, fixture, integration, and XCUITest coverage named by each task, but do not run commands that compile, link, launch, or test the product.
+- Keep every implemented task unchecked and mark it `code_ready_unverified`. This means only that a committed candidate and its unexecuted tests exist; it is not evidence that the code builds or works.
+- Integrate committed candidates so later tasks can build on stable source artifacts. Resolve textual merge conflicts and shared-file ownership centrally, but defer compiler, linker, test, Simulator, and app-runtime feedback.
+- Do not create task-specific `.build`, scratch, DerivedData, clean clones, Simulator clones, or test-result bundles during this phase. Do not delete unrelated existing artifacts.
 
-If the authoritative run fails, rerun only after changing the responsible code, configuration, or test. Record the successful candidate SHA, resolved dependencies, Xcode/Swift version, command, and result. Parent and review agents inspect the diff and this evidence; they do not rerun the same SHA in another scratch path. Rerun only when the SHA, dependency resolution, shared project setting, contract, or test changed, evidence is missing/corrupt, or a concrete reproducibility concern is recorded.
+### Phase 2: dedicated final verification and repair
 
-Run affected package/app suites and the app integration build once per integration wave, full XCUITest at runnable vertical slices or T17/T19, and clean-clone, long performance, device-matrix, and live end-to-end checks at their named milestones. Heavy commands (`xcodebuild`, full-package `swift test`, clean builds, XCUITest) are repository-wide single-flight. Each task owns and reuses one scratch/DerivedData path and removes regenerable scratch after recording its authoritative result.
+- Begin after all locally implementable tasks are `code_ready_unverified` and every genuinely blocked task has a concrete external/device/contract release condition.
+- Use one clean integrated worktree and one reusable scratch/DerivedData root. One verification owner reviews the full integrated diff, runs the build and required tests, and owns all verification-driven fixes so writers do not conflict.
+- Verify in order: package/app compilation, focused and full Swift tests, contract/fixture tests, app integration builds, XCUITest, then the named physical-device/live/performance gates. Preserve fixture and live as independent results.
+- Treat compiler/linker failures, required-test failures, and violated mandatory acceptance conditions as `P0`. Fix them in the verification worktree and rerun only after the responsible code, configuration, or test changes. Skip `P1` through `P3` under the bounded audit rule.
+- Record the final integrated SHA, resolved dependencies, Xcode/Swift version, commands, results, and remaining external gates. Delete the reusable build/scratch artifacts after evidence is recorded.
+- A task moves from `code_ready_unverified` to `implementation_ready`, `integration_ready`, or `accepted` only from this phase. Required device/live evidence may still keep an otherwise building task unchecked.
 
 Fixture and live are independent results. A fake camera or mock Room cannot satisfy physical capture or live publish. A Simulator pass cannot satisfy camera, orientation, interruption, thermal, measurement accuracy, VoiceOver camera operation, or export gates.
 
@@ -77,7 +82,7 @@ For live failures, verify that the app remains in live mode, displays the failur
 
 ## Complete or block honestly
 
-Use `planned`, `in_progress`, `implementation_ready`, `integration_ready`, `accepted`, and `blocked` to distinguish progress. Leave a task unchecked in every state except `accepted`; unchecked status does not prevent downstream separable work.
+Use `planned`, `in_progress`, `code_ready_unverified`, `implementation_ready`, `integration_ready`, `accepted`, and `blocked` to distinguish progress. Leave a task unchecked in every state except `accepted`; unchecked status does not prevent downstream separable work. `code_ready_unverified` is the normal endpoint of Phase 1 and must never be described as built, tested, or working.
 
 Mark `[x]` only after all of the task's completion conditions, automated tests, fixture/live checks, and device checks pass. Record evidence beneath the task in this form:
 

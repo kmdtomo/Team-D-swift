@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ProviderError",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["provider", "code", "message", "retryable"],
+  "properties": {
+    "provider": {"type": "string", "enum": ["shot-assessor", "vision-guidance", "measurement-line", "background-generator", "garment-masker"]},
+    "code": {"type": "string", "enum": ["TIMEOUT", "UNAVAILABLE", "INVALID_RESPONSE", "INVALID_INPUT", "UNKNOWN"]},
+    "message": {"type": "string", "minLength": 1},
+    "retryable": {"type": "boolean"}
+  }
+}

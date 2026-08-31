@@ -1,0 +1,11 @@
+{
+  "version": "1.0.0",
+  "files": [
+    "goldens/health.response.json",
+    "goldens/token.request.json", "goldens/token.response.json", "goldens/token.error-422.json", "goldens/token.error-422-validation.json", "goldens/token.error-503.json",
+    "goldens/analyze-shot.request.parts.json", "goldens/analyze-shot.response.json", "goldens/analyze-shot.error.json",
+    "goldens/measurement.request.parts.json", "goldens/measurement.response.json", "goldens/measurement.error.json",
+    "goldens/background.request.json", "goldens/background.response.png.json", "goldens/background.error.json",
+    "goldens/mask.request.parts.json", "goldens/mask.response.png.json", "goldens/mask.error.json"
+  ]
+}

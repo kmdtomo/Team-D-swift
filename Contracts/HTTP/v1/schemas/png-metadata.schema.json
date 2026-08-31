@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SourceFreePNGMetadata",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contentType", "base64", "sha256", "sourceFree"],
+  "properties": {
+    "contentType": {"const": "image/png"},
+    "base64": {"type": "string", "pattern": "^iVBORw0KGgo"},
+    "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "sourceFree": {"const": true}
+  }
+}

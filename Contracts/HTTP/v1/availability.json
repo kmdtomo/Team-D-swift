@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "version": "1.0.0",
+  "pinnedSourceSHA": "44065d41e8906d34e5d8e11d7cd4cc14b25d17f2",
+  "surfaces": {
+    "health": {"path": "/api/health", "available": true, "owner": "shared backend", "evidence": "backend/app.py:10-22", "releaseCondition": "implemented at pinned source"},
+    "livekit-token": {"path": "/api/livekit-token", "available": true, "owner": "shared backend", "evidence": "backend/livekit_token.py:292-330", "releaseCondition": "implemented at pinned source"},
+    "analyze-shot": {"path": "/api/analyze-shot", "available": false, "owner": "shared backend", "evidence": "backend/app.py:10-22 registers only health and token", "releaseCondition": "versioned backend handler and contract smoke"},
+    "suggest-measurement-points": {"path": "/api/suggest-measurement-points", "available": false, "owner": "shared backend", "evidence": "backend/app.py:10-22 registers only health and token", "releaseCondition": "versioned backend handler and contract smoke"},
+    "generate-background": {"path": "/api/generate-background", "available": false, "owner": "shared backend", "evidence": "backend/app.py:10-22 registers only health and token", "releaseCondition": "versioned backend handler and contract smoke"},
+    "remove-background": {"path": "/api/remove-background", "available": false, "owner": "shared backend", "evidence": "backend/app.py:10-22 registers only health and token", "releaseCondition": "versioned backend handler and contract smoke"},
+    "agent-guidance-push": {"available": false, "owner": "shared backend", "evidence": "backend/live_agent.py:839-846 uses a no-op default inference", "releaseCondition": "vision provider plus LiveKit data-packet/RPC publish wiring and smoke"}
+  }
+}

@@ -56,6 +56,15 @@ import DomainKit
     #expect(await fixture.callCount == 1)
 }
 
+@Test func bundleModeOverrideFailsClosedWithoutRelabelingTheCompiledProvider() {
+    let failure = BuildModeValidator.startupFailure(compiledMode: .live, bundleMode: "fixture")
+
+    #expect(failure == .configurationFailure(.live))
+    #expect(failure?.mode == .live)
+    #expect(failure?.message == "アプリの実行モード設定を確認できません。撮影を開始できません。")
+    #expect(BuildModeValidator.startupFailure(compiledMode: .fixture, bundleMode: "fixture") == nil)
+}
+
 @Test func liveEndpointsRequireHTTPSAndWSS() {
     #expect(throws: RuntimeCompositionError.invalidBackendBaseURL) {
         try LiveServiceEndpoints(backendBaseURL: URL(string: "http://backend.example.invalid")!, liveKitURL: URL(string: "wss://livekit.example.invalid")!)

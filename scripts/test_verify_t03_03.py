@@ -69,6 +69,14 @@ A000000000000000000000B3 /* Debug-Fixture */ = {isa = XCBuildConfiguration; base
         for endpoint in ("http://10.0.0." + "1", "https://172.16.0." + "1", "wss://192.168.1." + "1:7880", "https://[::" + "1]:443"):
             self.assertIn("private endpoint", verify.findings(endpoint))
 
+    def test_rejects_ipv6_ula_and_link_local_endpoints_in_bracketed_urls(self):
+        for endpoint in (
+            "https://[fc" + "00::1]:443",
+            "wss://[fd" + "12:3456::1]:7880",
+            "https://[fe" + "80::1%25en0]:443",
+        ):
+            self.assertIn("private endpoint", verify.findings(endpoint))
+
     def test_product_scan_recurses_through_bundle_resources(self):
         with tempfile.TemporaryDirectory() as temporary:
             bundle = Path(temporary) / "TeamD.app"
@@ -76,7 +84,7 @@ A000000000000000000000B3 /* Debug-Fixture */ = {isa = XCBuildConfiguration; base
             resource.parent.mkdir(parents=True)
             resource.write_text("API_" + "KEY=unsafe-value", encoding="utf-8")
             with self.assertRaises(SystemExit):
-                verify.check_product(bundle)
+                verify.check_product(bundle, "fixture")
 
     def test_binary_fixture_is_scanned_with_strings(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -95,6 +103,18 @@ A000000000000000000000B3 /* Debug-Fixture */ = {isa = XCBuildConfiguration; base
             }))
             verify.check_product(bundle, "fixture")
             self.assertRaises(SystemExit, verify.check_product, bundle, "live")
+
+    def test_rejects_debug_live_bundle_mode_override_to_fixture(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            bundle = Path(temporary) / "TeamD.app"
+            bundle.mkdir()
+            (bundle / "Info.plist").write_bytes(plistlib.dumps({
+                "TeamDMode": "fixture",
+                "TeamDBackendBaseURL": "https://backend.example.invalid",
+                "TeamDLiveKitURL": "wss://livekit.example.invalid",
+            }))
+            with self.assertRaises(SystemExit):
+                verify.check_product(bundle, "live")
 
     def test_rejects_sensitive_and_rembg_plist_keys_recursively(self):
         with self.assertRaises(SystemExit):

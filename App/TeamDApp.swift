@@ -15,21 +15,32 @@ struct TeamDApp: App {
         #elseif TEAM_D_FIXTURE
         dependencies = CameraFlowComposition.fixture()
         runtimeComposition = nil
-        initialRuntimeStartupState = nil
+        initialRuntimeStartupState = BuildModeValidator.startupFailure(
+            compiledMode: .fixture,
+            bundleMode: Self.configuredMode()
+        )
         #elseif TEAM_D_LIVE
         dependencies = CameraFlowComposition.live(
             cameraAuthorization: AVCameraAuthorizationProvider()
         )
-        do {
-            let endpoints = try LiveServiceEndpoints(
-                backendBaseURL: try Self.configuredURL(named: "TeamDBackendBaseURL"),
-                liveKitURL: try Self.configuredURL(named: "TeamDLiveKitURL")
-            )
-            runtimeComposition = .live(endpoints: endpoints, provider: UnavailableLiveRuntimeProvider())
-            initialRuntimeStartupState = nil
-        } catch {
+        if let failure = BuildModeValidator.startupFailure(
+            compiledMode: .live,
+            bundleMode: Self.configuredMode()
+        ) {
             runtimeComposition = nil
-            initialRuntimeStartupState = .liveFailure
+            initialRuntimeStartupState = failure
+        } else {
+            do {
+                let endpoints = try LiveServiceEndpoints(
+                    backendBaseURL: try Self.configuredURL(named: "TeamDBackendBaseURL"),
+                    liveKitURL: try Self.configuredURL(named: "TeamDLiveKitURL")
+                )
+                runtimeComposition = .live(endpoints: endpoints, provider: UnavailableLiveRuntimeProvider())
+                initialRuntimeStartupState = nil
+            } catch {
+                runtimeComposition = nil
+                initialRuntimeStartupState = .liveFailure
+            }
         }
         #else
         #error("TeamD must be built with TEAM_D_FIXTURE or TEAM_D_LIVE")
@@ -52,6 +63,10 @@ struct TeamDApp: App {
             throw RuntimeCompositionError.missingConfiguredEndpoint
         }
         return url
+    }
+
+    private static func configuredMode() -> String? {
+        Bundle.main.object(forInfoDictionaryKey: "TeamDMode") as? String
     }
 }
 

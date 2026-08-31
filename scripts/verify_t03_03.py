@@ -22,7 +22,13 @@ IMAGE_MASK_ASSIGNMENT = re.compile(r"(?im)^\s*(?:(?:let|var)\s+)?[A-Z0-9_]*rembg
 JSON_MASK_FIELD = re.compile(r"(?i)\"[^\"]*rembg[^\"]*\"\s*:\s*\"([^\"]+)\"")
 JWT = re.compile(r"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b")
 PRIVATE_KEY = re.compile(r"-----BEGIN (?:[A-Z ]+ )?PRIVATE KEY-----")
-PRIVATE_ADDRESS = re.compile(r"(?i)(?:https?|wss?)://(?:localhost|127\.0\.0\.1|0\.0\.0\.0|10(?:\.\d{1,3}){3}|172\.(?:1[6-9]|2\d|3[01])(?:\.\d{1,3}){2}|192\.168(?:\.\d{1,3}){2}|\[?::1\]?)(?::\d+)?")
+PRIVATE_ADDRESS = re.compile(
+    r"(?i)(?:https?|wss?)://(?:"
+    r"localhost|127\.0\.0\.1|0\.0\.0\.0|"
+    r"10(?:\.\d{1,3}){3}|172\.(?:1[6-9]|2\d|3[01])(?:\.\d{1,3}){2}|192\.168(?:\.\d{1,3}){2}|"
+    r"\[(?:(?:::1)|(?:(?:f[c-d][0-9a-f]{2}|fe[89ab][0-9a-f])(?::[0-9a-f]{0,4})*(?:%25[A-Za-z0-9_.-]+)?))\]"
+    r")(?:\:\d+)?"
+)
 SAFE_SYNTHETIC = ("synthetic.not-a-secret", "eyJhbGciOiJIUzI1NiJ9.payload.signature", "-DO-NOT-LEAK", "example.invalid", "example.test")
 
 
@@ -132,6 +138,7 @@ def check_project() -> None:
     require('<ProfileAction buildConfiguration="Release"' in scheme and '<ArchiveAction buildConfiguration="Release"' in scheme, "shared scheme profiles/archives release")
     app = text(APP)
     require(has_exact_mode_guards(app), "app rejects unselected and multiply selected modes")
+    require("BuildModeValidator.startupFailure(" in app and "bundleMode: Self.configuredMode()" in app, "app fails closed when bundle mode differs from the compiled provider")
     require("private struct ModeBadge" in app and "ModeBadge(mode: mode)" in app, "root renders one mode badge for every route")
     capture_start = app[app.index("private struct CaptureStartView"):app.index("private struct ModeBadge")]
     require("mode-badge" not in capture_start, "capture start does not duplicate mode badge")
@@ -184,15 +191,15 @@ def all_configuration_lists_are_exact(project: str) -> bool:
     return True
 
 
-def check_product(product: Path, expected_mode: str | None = None) -> None:
+def check_product(product: Path, expected_mode: str) -> None:
     require(product.is_dir() and product.suffix == ".app", f"built product is not an app bundle: {product}")
+    require(expected_mode in {"fixture", "live"}, "built product scan requires its expected build-selected mode")
     info_path = product / "Info.plist"
     require(info_path.is_file(), f"built product is missing Info.plist: {product}")
     info = plistlib.loads(info_path.read_bytes())
     check_plist(info_path, info)
     require(info.get("TeamDMode") in {"fixture", "live"}, "built product has an explicit TeamDMode")
-    if expected_mode:
-        require(info.get("TeamDMode") == expected_mode, f"built product mode is {expected_mode}")
+    require(info.get("TeamDMode") == expected_mode, f"built product mode is {expected_mode}")
     require(info.get("TeamDBackendBaseURL") == "https://backend.example.invalid", "built product has only the public HTTPS backend URL")
     require(info.get("TeamDLiveKitURL") == "wss://livekit.example.invalid", "built product has only the public LiveKit WSS URL")
     for path in product.rglob("*"):
@@ -215,6 +222,7 @@ def main() -> None:
     check_project()
     check_tracked_repository()
     if args.product:
+        require(args.expected_mode is not None, "--product requires --expected-mode")
         check_product(args.product, args.expected_mode)
     print("T03-03 fixture/live configuration and secret-boundary verification passed.")
 

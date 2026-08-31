@@ -1,0 +1,23 @@
+name: T02-03 Fixture Documentation Smoke
+
+on:
+  pull_request:
+  push:
+
+permissions:
+  contents: read
+
+jobs:
+  fixture-docs-smoke:
+    runs-on: macos-26
+    timeout-minutes: 60
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.2.app/Contents/Developer
+      TEAM_D_SIMULATOR_NAME: iPhone 17 Pro
+      TEAM_D_SIMULATOR_RUNTIME: com.apple.CoreSimulator.SimRuntime.iOS-26-2
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate documentation, smoke script, and workflow agreement
+        run: python3 scripts/test_t02_03_docs.py
+      - name: Run documented fixture-only command sequence
+        run: ./scripts/docs_smoke_fixture.sh

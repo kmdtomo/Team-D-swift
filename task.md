@@ -187,7 +187,7 @@
   - device: not required
   - limitations: T05-03 owns the Settings/PhotosPicker fallback and remains unimplemented. T05/T06 own the actual AVCaptureSession, preview, fixed 2D guides, and shutter and remain unimplemented. The clean clone remained clean after all commands.
 
-- [ ] **T02-03 開発者が1時間以内にSimulator testへ到達できるbaselineを作る**
+- [x] **T02-03 開発者が1時間以内にSimulator testへ到達できるbaselineを作る**
   - 担当する責務: レーンA/Fが、Xcode以外の必須ローカルserviceなしで初回実行できる環境を定義する。
   - 依存する先行タスク: T02-01, T02-02。
   - 実装対象: clone→設定→build→fixture UI testの手順、対応Xcode、任意のCLI手順、トラブルシュート、計測チェックシート。
@@ -195,6 +195,16 @@
   - 自動テスト方法: 記載コマンドをCIで順番に実行するdocs smoke jobを用意する。
   - 実機確認が必要か: 不要。
   - fixture / live: fixture。
+
+### T02-03 検証記録（2026-08-31）
+
+- Verification (2026-08-31):
+  - commit/build: `7e7370a docs: add fixture simulator bootstrap baseline`; clean clone `/tmp/teamd-t02-03-clean.fEHxYE/repo`; Xcode 26.2 (17C52), iPhone 16 Pro Simulator (iOS 18.5)
+  - automated tests: start `2026-08-31T21:45:50+0900 (1788180350)`, end `2026-08-31T21:46:30+0900 (1788180390)`; clone through first successful fixture UI test: 40 seconds (<60 minutes). `git clone --no-local /Users/komodatomo/Desktop/Team-D-swift /tmp/teamd-t02-03-clean.fEHxYE/repo`; from the clone root: `./scripts/docs_smoke_fixture.sh`; `python3 scripts/test_t02_03_docs.py`; `bash -n scripts/docs_smoke_fixture.sh`; `python3 scripts/lint_package_graph.py`; `./scripts/lint_t01_01.sh`; `python3 scripts/lint_t01_02.py`; `git diff --check` all passed
+  - fixture: canonical script elapsed 25 seconds; one exact XCUITest passed (1/1, `TEST SUCCEEDED`); known AppIntents diagnostics 3, unexpected diagnostics 0, runtime diagnostics 0; repository status was unchanged and clean before/after. No secrets, Docker, local backend, LiveKit, or camera were required.
+  - live: not required
+  - device: not required
+  - limitations: fixture-only cold-launch baseline; the full fixture flow remains T17-03. The docs-smoke workflow pins macos-26, Xcode 26.2, and iOS 26.2/iPhone 17 Pro, runs the canonical script with a 60-minute timeout and `contents: read`; hosted CI itself has not run because these commits have not been pushed.
 
 ## 3. fixture／live設定とAPI契約
 

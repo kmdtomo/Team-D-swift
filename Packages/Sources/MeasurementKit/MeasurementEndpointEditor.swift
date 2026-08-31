@@ -48,6 +48,21 @@ public enum MeasurementEndpointAccessibilityAdjustment: Equatable, Sendable {
     case decrement
 }
 
+/// Result of an endpoint edit that must remain synchronized with the app-owned
+/// workflow. Only the first edit of an approved draft carries a revocation event.
+public struct MeasurementEndpointEditResult: Equatable, Sendable {
+    public let measurements: MeasurementGeometryResult
+    public let workflowEvent: WorkflowEvent?
+
+    public init(
+        measurements: MeasurementGeometryResult,
+        workflowEvent: WorkflowEvent?
+    ) {
+        self.measurements = measurements
+        self.workflowEvent = workflowEvent
+    }
+}
+
 /// Maps corrected-image normalized coordinates to an aspect-fit image that can be zoomed
 /// and panned inside a SwiftUI viewport. It is independent of SwiftUI so its round trips
 /// remain deterministic in focused tests.
@@ -184,6 +199,7 @@ public struct MeasurementEndpointEditor: Equatable {
         _ endpoint: MeasurementEndpoint,
         to point: SessionNormalizedPoint
     ) throws -> MeasurementGeometryResult {
+        guard point != self.point(for: endpoint) else { return measurements }
         let updated = replacing(endpoint, with: point)
         let recalculated = try MeasurementGeometry.calculate(
             endpoints: updated,
@@ -203,6 +219,35 @@ public struct MeasurementEndpointEditor: Equatable {
         mapper: MeasurementImageCoordinateMapper
     ) throws -> MeasurementGeometryResult {
         try update(endpoint, to: mapper.clampedNormalizedPoint(for: point))
+    }
+
+    /// UI-facing edit operation. It couples the local approval revocation with
+    /// the one app-owned event required to close the edit gate.
+    @discardableResult
+    public mutating func updateForWorkflow(
+        _ endpoint: MeasurementEndpoint,
+        to point: SessionNormalizedPoint
+    ) throws -> MeasurementEndpointEditResult {
+        let wasApproved = status == .approvedCV
+        let measurements = try update(endpoint, to: point)
+        return MeasurementEndpointEditResult(
+            measurements: measurements,
+            workflowEvent: wasApproved && status == .needsReview
+                ? .measurementChanged
+                : nil
+        )
+    }
+
+    @discardableResult
+    public mutating func updateForWorkflow(
+        _ endpoint: MeasurementEndpoint,
+        fromViewPoint point: CGPoint,
+        mapper: MeasurementImageCoordinateMapper
+    ) throws -> MeasurementEndpointEditResult {
+        try updateForWorkflow(
+            endpoint,
+            to: mapper.clampedNormalizedPoint(for: point)
+        )
     }
 
     @discardableResult
@@ -231,6 +276,22 @@ public struct MeasurementEndpointEditor: Equatable {
             )
         }
         return try update(endpoint, to: updated)
+    }
+
+    @discardableResult
+    public mutating func adjustForWorkflow(
+        _ endpoint: MeasurementEndpoint,
+        by adjustment: MeasurementEndpointAccessibilityAdjustment,
+        step: Double = 0.005
+    ) throws -> MeasurementEndpointEditResult {
+        let wasApproved = status == .approvedCV
+        let measurements = try adjust(endpoint, by: adjustment, step: step)
+        return MeasurementEndpointEditResult(
+            measurements: measurements,
+            workflowEvent: wasApproved && status == .needsReview
+                ? .measurementChanged
+                : nil
+        )
     }
 
     /// The first explicit approval operation. In-range values approve immediately;

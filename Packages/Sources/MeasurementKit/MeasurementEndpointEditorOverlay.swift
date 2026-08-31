@@ -179,12 +179,12 @@ public struct MeasurementEndpointEditorOverlay: View {
         .highPriorityGesture(
             DragGesture(minimumDistance: 0)
                 .onChanged { value in
-                    if (try? editor.update(
+                    if let result = try? editor.updateForWorkflow(
                         endpoint,
                         fromViewPoint: value.location,
                         mapper: mapper
-                    )) != nil {
-                        endpointWasEdited()
+                    ) {
+                        endpointWasEdited(result)
                     }
                 }
         )
@@ -193,8 +193,8 @@ public struct MeasurementEndpointEditorOverlay: View {
         .accessibilityHint("\(endpoint.accessibilityAdjustmentHint) 変更後は承認待ちです。")
         .accessibilityAdjustableAction { direction in
             let adjustment: MeasurementEndpointAccessibilityAdjustment = direction == .increment ? .increment : .decrement
-            if (try? editor.adjust(endpoint, by: adjustment)) != nil {
-                endpointWasEdited()
+            if let result = try? editor.adjustForWorkflow(endpoint, by: adjustment) {
+                endpointWasEdited(result)
             }
         }
     }
@@ -243,13 +243,16 @@ public struct MeasurementEndpointEditorOverlay: View {
         approvalFeedback = .cancelled
     }
 
-    private func endpointWasEdited() {
+    private func endpointWasEdited(_ result: MeasurementEndpointEditResult) {
         if let rangeConfirmation {
             _ = editor.cancelCVApproval(rangeConfirmation)
         }
         rangeConfirmation = nil
         isRangeWarningPresented = false
         approvalFeedback = nil
+        if let event = result.workflowEvent {
+            onWorkflowEvent(event)
+        }
     }
 
     private var editorAccessibilityValue: String {

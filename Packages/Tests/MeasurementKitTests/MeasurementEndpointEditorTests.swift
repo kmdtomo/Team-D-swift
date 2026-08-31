@@ -182,6 +182,48 @@ func accessibilityAdjustmentDecrementMovesEachEndpointBackAlongItsMeaningfulAxis
     )
     #expect(editor.status == .approvedCV)
 
-    _ = try editor.update(.widthEnd, to: editorPoint(0.75, 0.5))
+    let firstEdit = try editor.updateForWorkflow(
+        .widthEnd,
+        to: editorPoint(0.75, 0.5)
+    )
     #expect(editor.status == .needsReview)
+    #expect(firstEdit.workflowEvent == .measurementChanged)
+
+    let secondEdit = try editor.updateForWorkflow(
+        .widthEnd,
+        to: editorPoint(0.70, 0.5)
+    )
+    #expect(secondEdit.workflowEvent == nil)
+}
+
+@Test func neverApprovedEndpointEditsDoNotEmitMeasurementChanged() throws {
+    var editor = try makeEditor()
+    let drag = try editor.updateForWorkflow(
+        .widthEnd,
+        to: editorPoint(0.75, 0.5)
+    )
+    let accessibility = try editor.adjustForWorkflow(.widthEnd, by: .decrement)
+
+    #expect(editor.status == .needsReview)
+    #expect(drag.workflowEvent == nil)
+    #expect(accessibility.workflowEvent == nil)
+}
+
+@Test func touchingAnApprovedEndpointWithoutMovingDoesNotRevokeApproval() throws {
+    let garmentPolygon = CorrectedMeasurementGarmentPolygon(points: [
+        MeasurementPixelPoint(x: 0, y: 0),
+        MeasurementPixelPoint(x: 1_000, y: 0),
+        MeasurementPixelPoint(x: 1_000, y: 2_000),
+        MeasurementPixelPoint(x: 0, y: 2_000),
+    ])
+    var editor = try makeEditor()
+    _ = editor.requestCVApproval(garmentPolygon: garmentPolygon)
+
+    let unchanged = try editor.updateForWorkflow(
+        .widthEnd,
+        to: editor.point(for: .widthEnd)
+    )
+
+    #expect(editor.status == .approvedCV)
+    #expect(unchanged.workflowEvent == nil)
 }

@@ -90,6 +90,26 @@ import Testing
     #expect(state.isEditUnlocked)
 }
 
+@Test func editingApprovedMeasurementReturnsToReviewAndClosesEditGate() throws {
+    var state = try stateReadyToEdit(approval: .approvedCV)
+    let retained = state.retainedSlots
+    let accepted = state.acceptedSlots
+
+    try state.transition(.measurementChanged)
+
+    #expect(state.phase == .measurementReview)
+    #expect(state.measurementApproval == .unapproved)
+    #expect(state.retainedSlots == retained)
+    #expect(state.acceptedSlots == accepted)
+    #expect(state.acceptedSlots == Set(Shot.allCases))
+    #expect(!state.isEditUnlocked)
+    try expectError(
+        &state,
+        .beginEdit,
+        expected: .invalidEvent(phase: .measurementReview, event: .beginEdit)
+    )
+}
+
 @Test func manualInputPathRequiresAValidatedFourthImage() throws {
     var manual = try stateThroughTagAcceptance()
     try manual.transition(.startMeasurementCapture)
@@ -147,7 +167,7 @@ private func phaseFixtures() throws -> [PhaseFixture] {
         .init(state: try state(phase: .measurementPrep, retained: [.front, .back, .tag], accepted: [.front, .back, .tag]), acceptedEvents: [.startMeasurementCapture, .retake(.front), .retake(.back), .retake(.tag)]),
         .init(state: try state(phase: .validatingMeasurement, retained: [.front, .back, .tag], accepted: [.front, .back, .tag]), acceptedEvents: [.measurementValidationSucceeded, .measurementAcceptedForManualInput, .measurementRejected, .retake(.front), .retake(.back), .retake(.tag)]),
         .init(state: try state(phase: .measurementReview, retained: Set(Shot.allCases), accepted: Set(Shot.allCases)), acceptedEvents: [.measurementChanged, .approveMeasurementCV, .approveMeasurementManual, .retake(.front), .retake(.back), .retake(.tag), .retake(.measurement)]),
-        .init(state: try state(phase: .readyToEdit, retained: Set(Shot.allCases), accepted: Set(Shot.allCases), approval: .approvedCV), acceptedEvents: [.beginEdit, .retake(.front), .retake(.back), .retake(.tag), .retake(.measurement)]),
+        .init(state: try state(phase: .readyToEdit, retained: Set(Shot.allCases), accepted: Set(Shot.allCases), approval: .approvedCV), acceptedEvents: [.measurementChanged, .beginEdit, .retake(.front), .retake(.back), .retake(.tag), .retake(.measurement)]),
         .init(state: try state(phase: .processingEdit, retained: Set(Shot.allCases), accepted: Set(Shot.allCases), approval: .approvedCV), acceptedEvents: [.editSucceeded, .editFailed, .retake(.front), .retake(.back), .retake(.tag), .retake(.measurement)]),
         .init(state: try state(phase: .preview, retained: Set(Shot.allCases), accepted: Set(Shot.allCases), approval: .approvedCV), acceptedEvents: [.beginApproval, .retake(.front), .retake(.back), .retake(.tag), .retake(.measurement)]),
         .init(state: try state(phase: .approval, retained: Set(Shot.allCases), accepted: Set(Shot.allCases), approval: .approvedCV), acceptedEvents: [.confirmApproval, .retake(.front), .retake(.back), .retake(.tag), .retake(.measurement)]),

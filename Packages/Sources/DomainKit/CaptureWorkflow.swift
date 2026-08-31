@@ -118,8 +118,11 @@ public struct CaptureWorkflowState: Equatable, Sendable {
             phase = .measurementPrep
 
         case .measurementChanged:
-            guard phase == .measurementReview else { throw invalid(event) }
+            guard phase == .measurementReview || phase == .readyToEdit else {
+                throw invalid(event)
+            }
             measurementApproval = .unapproved
+            phase = .measurementReview
 
         case .approveMeasurementCV:
             try approveMeasurement(.approvedCV, event: event)

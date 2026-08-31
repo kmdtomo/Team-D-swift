@@ -27,6 +27,7 @@ public struct LiveServiceEndpoints: Equatable, Sendable {
 public enum RuntimeCompositionError: Error, Equatable, Sendable {
     case invalidBackendBaseURL
     case invalidLiveKitURL
+    case missingConfiguredEndpoint
 }
 
 /// All HTTP clients that carry session data use this factory. It intentionally
@@ -44,6 +45,39 @@ public enum EphemeralSessionFactory {
 
 public protocol RuntimeProvider: Sendable {
     func start() async throws
+}
+
+/// Honest placeholder while the shared LiveKit/backend integration remains
+/// unavailable. It is intentionally a failure, never fixture success.
+public struct UnavailableLiveRuntimeProvider: RuntimeProvider {
+    public init() {}
+    public func start() async throws { throw RuntimeProviderAvailabilityError.unavailable }
+}
+
+public enum RuntimeProviderAvailabilityError: Error, Equatable, Sendable { case unavailable }
+
+/// Presentation-safe startup state. A live provider failure keeps its live
+/// identity and gives the camera flow an explicit Japanese recovery message.
+public enum RuntimeStartupState: Equatable, Sendable {
+    case ready(CameraFlowMode)
+    case liveFailure
+    case fixtureFailure
+
+    public var mode: CameraFlowMode {
+        switch self {
+        case .ready(let mode): mode
+        case .liveFailure: .live
+        case .fixtureFailure: .fixture
+        }
+    }
+
+    public var message: String? {
+        switch self {
+        case .ready: nil
+        case .liveFailure: "ライブ接続を利用できません。撮影はこのまま続けられます。"
+        case .fixtureFailure: "テストデータの準備を開始できません。"
+        }
+    }
 }
 
 public struct RuntimeServiceComposition: Sendable {
@@ -71,5 +105,16 @@ public struct RuntimeServiceComposition: Sendable {
     /// branch, so a failed live startup remains a visible live failure.
     public func start() async throws {
         try await provider.start()
+    }
+
+    /// Maps only a live provider failure into a visible live failure. It does
+    /// not create, call, or substitute a fixture provider.
+    public func startupState() async -> RuntimeStartupState {
+        do {
+            try await start()
+            return .ready(mode)
+        } catch {
+            return mode == .live ? .liveFailure : .fixtureFailure
+        }
     }
 }

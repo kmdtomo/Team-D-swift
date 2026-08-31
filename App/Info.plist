@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>NSCameraUsageDescription</key>
+    <string>正面・背面・タグ・採寸の写真を撮影するためにカメラを使用します。</string>
+    <key>TeamDBackendBaseURL</key>
+    <string>$(TEAM_D_BACKEND_BASE_URL)</string>
+    <key>TeamDLiveKitURL</key>
+    <string>$(TEAM_D_LIVEKIT_URL)</string>
+    <key>TeamDMode</key>
+    <string>$(TEAM_D_MODE)</string>
+</dict>
+</plist>

@@ -1,6 +1,4 @@
 #include "Shared.xcconfig"
 
 SWIFT_ACTIVE_COMPILATION_CONDITIONS = $(inherited) TEAM_D_FIXTURE
-INFOPLIST_KEY_TeamDMode = fixture
-INFOPLIST_KEY_TeamDBackendBaseURL = $(TEAM_D_BACKEND_BASE_URL)
-INFOPLIST_KEY_TeamDLiveKitURL = $(TEAM_D_LIVEKIT_URL)
+TEAM_D_MODE = fixture

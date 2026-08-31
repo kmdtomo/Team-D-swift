@@ -1,18 +1,36 @@
 import AVFoundation
 import SwiftUI
+import CompositionKit
 import DomainKit
 
 @main
 struct TeamDApp: App {
     private let dependencies: CameraFlowDependencies
+    private let runtimeComposition: RuntimeServiceComposition?
+    private let initialRuntimeStartupState: RuntimeStartupState?
 
     init() {
-        #if TEAM_D_FIXTURE
+        #if TEAM_D_FIXTURE && TEAM_D_LIVE
+        #error("TeamD build mode must select exactly one of TEAM_D_FIXTURE or TEAM_D_LIVE")
+        #elseif TEAM_D_FIXTURE
         dependencies = CameraFlowComposition.fixture()
+        runtimeComposition = nil
+        initialRuntimeStartupState = nil
         #elseif TEAM_D_LIVE
         dependencies = CameraFlowComposition.live(
             cameraAuthorization: AVCameraAuthorizationProvider()
         )
+        do {
+            let endpoints = try LiveServiceEndpoints(
+                backendBaseURL: try Self.configuredURL(named: "TeamDBackendBaseURL"),
+                liveKitURL: try Self.configuredURL(named: "TeamDLiveKitURL")
+            )
+            runtimeComposition = .live(endpoints: endpoints, provider: UnavailableLiveRuntimeProvider())
+            initialRuntimeStartupState = nil
+        } catch {
+            runtimeComposition = nil
+            initialRuntimeStartupState = .liveFailure
+        }
         #else
         #error("TeamD must be built with TEAM_D_FIXTURE or TEAM_D_LIVE")
         #endif
@@ -20,24 +38,45 @@ struct TeamDApp: App {
 
     var body: some Scene {
         WindowGroup {
-            CameraFlowRootView(dependencies: dependencies)
+            CameraFlowRootView(
+                dependencies: dependencies,
+                runtimeComposition: runtimeComposition,
+                initialRuntimeStartupState: initialRuntimeStartupState
+            )
         }
+    }
+
+    private static func configuredURL(named key: String) throws -> URL {
+        guard let value = Bundle.main.object(forInfoDictionaryKey: key) as? String,
+              let url = URL(string: value) else {
+            throw RuntimeCompositionError.missingConfiguredEndpoint
+        }
+        return url
     }
 }
 
 @MainActor
 private final class CameraFlowRootModel: ObservableObject {
     @Published private(set) var authorizationStatus: CameraAuthorizationStatus
+    @Published private(set) var runtimeStartupState: RuntimeStartupState?
 
     private let cameraAuthorization: any CameraAuthorizationProviding
+    private let runtimeComposition: RuntimeServiceComposition?
 
-    init(cameraAuthorization: any CameraAuthorizationProviding) {
+    init(cameraAuthorization: any CameraAuthorizationProviding, runtimeComposition: RuntimeServiceComposition?, initialRuntimeStartupState: RuntimeStartupState?) {
         self.cameraAuthorization = cameraAuthorization
+        self.runtimeComposition = runtimeComposition
+        self.runtimeStartupState = initialRuntimeStartupState
         authorizationStatus = cameraAuthorization.authorizationStatus()
     }
 
     func requestCameraAccess() async {
         authorizationStatus = await cameraAuthorization.requestAuthorization()
+    }
+
+    func startRuntimeIfNeeded() async {
+        guard let runtimeComposition, runtimeStartupState == nil else { return }
+        runtimeStartupState = await runtimeComposition.startupState()
     }
 }
 
@@ -47,59 +86,66 @@ private struct CameraFlowRootView: View {
     private let mode: CameraFlowMode
     @StateObject private var model: CameraFlowRootModel
 
-    init(dependencies: CameraFlowDependencies) {
+    init(dependencies: CameraFlowDependencies, runtimeComposition: RuntimeServiceComposition? = nil, initialRuntimeStartupState: RuntimeStartupState? = nil) {
         mode = dependencies.mode
         _model = StateObject(wrappedValue: CameraFlowRootModel(
-            cameraAuthorization: dependencies.cameraAuthorization
+            cameraAuthorization: dependencies.cameraAuthorization,
+            runtimeComposition: runtimeComposition,
+            initialRuntimeStartupState: initialRuntimeStartupState
         ))
     }
 
     var body: some View {
-        Group {
-            switch CameraFlowEntry.route(for: model.authorizationStatus) {
-            case .captureFront:
-                CaptureStartView(mode: mode)
-            case .requestPermission:
-                CameraPermissionView(
-                    title: "カメラを使って撮影を始めます",
-                    message: "正面・背面・タグ・採寸を、この撮影フローで順に撮影します。",
-                    actionTitle: "カメラを許可する",
-                    action: { await model.requestCameraAccess() }
-                )
-            case .permissionDenied:
-                CameraPermissionView(
-                    title: "カメラの許可が必要です",
-                    message: "カメラが許可されていないため、撮影を開始できません。許可が利用可能になるまで、この撮影フローを表示します。",
-                    actionTitle: nil,
-                    action: nil
-                )
-            case .permissionRestricted:
-                CameraPermissionView(
-                    title: "この端末ではカメラを使えません",
-                    message: "カメラの利用が制限されているため、撮影を開始できません。この撮影フローは開いたままです。",
-                    actionTitle: nil,
-                    action: nil
-                )
+        ZStack(alignment: .top) {
+            Group {
+                switch CameraFlowEntry.route(for: model.authorizationStatus) {
+                case .captureFront:
+                    CaptureStartView()
+                case .requestPermission:
+                    CameraPermissionView(
+                        title: "カメラを使って撮影を始めます",
+                        message: "正面・背面・タグ・採寸を、この撮影フローで順に撮影します。",
+                        actionTitle: "カメラを許可する",
+                        action: { await model.requestCameraAccess() }
+                    )
+                case .permissionDenied:
+                    CameraPermissionView(
+                        title: "カメラの許可が必要です",
+                        message: "カメラが許可されていないため、撮影を開始できません。許可が利用可能になるまで、この撮影フローを表示します。",
+                        actionTitle: nil,
+                        action: nil
+                    )
+                case .permissionRestricted:
+                    CameraPermissionView(
+                        title: "この端末ではカメラを使えません",
+                        message: "カメラの利用が制限されているため、撮影を開始できません。この撮影フローは開いたままです。",
+                        actionTitle: nil,
+                        action: nil
+                    )
+                }
             }
+            VStack(spacing: 8) {
+                ModeBadge(mode: mode)
+                if let message = model.runtimeStartupState?.message {
+                    Text(message)
+                        .font(.footnote)
+                        .foregroundStyle(.white)
+                        .multilineTextAlignment(.center)
+                        .accessibilityIdentifier("live-startup-error")
+                }
+            }
+            .padding(.top, 12)
         }
         .background(Color.black.ignoresSafeArea())
+        .task { await model.startRuntimeIfNeeded() }
     }
 }
 
 private struct CaptureStartView: View {
-    let mode: CameraFlowMode
-
     var body: some View {
         ZStack {
             Color.black
             VStack(spacing: 20) {
-                Text(mode == .fixture ? "Fixture モード" : "Live モード")
-                    .font(.caption.weight(.semibold))
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(.thinMaterial, in: Capsule())
-                    .accessibilityIdentifier(mode == .fixture ? "fixture-mode-badge" : "live-mode-badge")
-
                 Spacer()
 
                 Text("正面 1/4")
@@ -120,6 +166,19 @@ private struct CaptureStartView: View {
             .padding(.bottom, 28)
         }
         .accessibilityElement(children: .contain)
+    }
+}
+
+private struct ModeBadge: View {
+    let mode: CameraFlowMode
+
+    var body: some View {
+        Text(mode == .fixture ? "テストデータ" : "Live モード")
+            .font(.caption.weight(.semibold))
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(.thinMaterial, in: Capsule())
+            .accessibilityIdentifier(mode == .fixture ? "fixture-mode-badge" : "live-mode-badge")
     }
 }
 

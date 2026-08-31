@@ -18,6 +18,23 @@ import DomainKit
     #expect(await fixture.callCount == 0)
 }
 
+@Test func liveStartupFailureRetainsLiveModeAndJapaneseMessageWithoutFixtureFallback() async throws {
+    let fixture = ProviderSpy(result: .success(()))
+    let live = ProviderSpy(result: .failure(StubError.unavailable))
+    let endpoints = try LiveServiceEndpoints(
+        backendBaseURL: URL(string: "https://backend.example.invalid")!,
+        liveKitURL: URL(string: "wss://livekit.example.invalid")!
+    )
+
+    let state = await RuntimeServiceComposition.live(endpoints: endpoints, provider: live).startupState()
+
+    #expect(state == .liveFailure)
+    #expect(state.mode == .live)
+    #expect(state.message == "ライブ接続を利用できません。撮影はこのまま続けられます。")
+    #expect(await live.callCount == 1)
+    #expect(await fixture.callCount == 0)
+}
+
 @Test func fixtureCompositionDoesNotCreateANetworkSession() async throws {
     let fixture = ProviderSpy(result: .success(()))
     let composition = RuntimeServiceComposition.fixture(provider: fixture)
@@ -26,6 +43,16 @@ import DomainKit
     #expect(composition.mode == .fixture)
     #expect(composition.endpoints == nil)
     #expect(composition.session == nil)
+    #expect(await fixture.callCount == 1)
+}
+
+@Test func fixtureStartupFailureRemainsAnExplicitFixtureFailure() async {
+    let fixture = ProviderSpy(result: .failure(.unavailable))
+    let state = await RuntimeServiceComposition.fixture(provider: fixture).startupState()
+
+    #expect(state == .fixtureFailure)
+    #expect(state.mode == .fixture)
+    #expect(state.message == "テストデータの準備を開始できません。")
     #expect(await fixture.callCount == 1)
 }
 

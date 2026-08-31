@@ -12,16 +12,22 @@ python3 scripts/t11_01_measurement_corpus/generate_synthetic.py --output /tmp/te
 python3 scripts/t11_01_measurement_corpus/lint_corpus.py --render-dir /tmp/teamd-t11-01
 ```
 
-The generator is standard-library-only.  The manifest pins each generated
-SHA-256, rendered marker corners, projected scale, garment mask expectation,
-real-world measurement expectation, and expected finite failure. Perspective
+The generator is standard-library-only. The manifest pins each generated
+SHA-256, rendered marker corners, candidate and accepted scale, mask
+polygon/status, endpoint annotations, derived cm values, local quality hints,
+and expected finite failure. The synthetic garment's derivable measurements
+are 21.5cm by 22.0cm at 20px/cm, rather than unfounded 70/52 labels.
+Perspective
 cases record **rectified** px/cm: the scale after the four annotated corners
 are perspective-corrected, not an axis-aligned source-pixel measurement.
-Edge-margin and aspect-ratio rejections record `scaleAccepted:false` and an
-`unresolved` MeasurementFailure mapping; requirements define no finite failure
-code for those geometric rejections. The physical corpus is
+Edge-margin and aspect-ratio rejections map compatibly to `MARKER_MISSING`
+with the explicit reason `no valid marker candidate accepted`; this does not
+add a production failure enum. Dark and blur are local-quality annotations,
+not successful scale results. The physical corpus is
 not represented by substitute fixture images: collect it with the runbook and
-record only non-identifying conditions in `physical-corpus-log.csv`.
+record only non-identifying conditions in `physical-corpus-log.csv`. The
+required physical gate is >=30 reviewed captures plus the ruler check; its
+optional 10-case failure/boundary comparison set is additional evidence only.
 
 No ArUco, OpenCV, Web asset, source-Web binary, personal image, or secret is
 used by this corpus.

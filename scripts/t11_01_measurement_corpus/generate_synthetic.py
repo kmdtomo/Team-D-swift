@@ -29,6 +29,9 @@ def garment(pixels, mode="complete"):
     rect(pixels, x0, y0 + 85, x0 + 150, y0 + 280, color)
     rect(pixels, x1 - 150, y0 + 85, x1, y0 + 280, color)
     rect(pixels, x0 + 230, y0, x1 - 230, y0 + 35, (225, 224, 220) if mode == "low_contrast" else (34, 75, 116))
+    if mode == "endpoint_invalid":
+        # The garment intentionally lacks the annotated left-width endpoint.
+        rect(pixels, 110, 215, 195, 410, (234, 232, 224))
 
 
 def marker(pixels, x, y, side, occluded=False, height=None):
@@ -41,7 +44,9 @@ def marker(pixels, x, y, side, occluded=False, height=None):
 
 
 def polygon(pixels, points, color):
-    for y in range(max(0, min(y for _, y in points)), min(SIZE, max(y for _, y in points) + 1)):
+    y_start = max(0, int(min(y for _, y in points)))
+    y_end = min(SIZE, int(max(y for _, y in points)) + 1)
+    for y in range(y_start, y_end):
         intersections = []
         for (x1, y1), (x2, y2) in zip(points, points[1:] + points[:1]):
             if (y1 <= y < y2) or (y2 <= y < y1):
@@ -86,15 +91,15 @@ def encode_png(pixels):
 def image_for(case):
     bg = (234, 232, 224)
     pixels = [[bg for _ in range(SIZE)] for _ in range(SIZE)]
-    garment(pixels, case.get("garment", "complete"))
+    garment(pixels, case.get("garmentMode", "complete"))
     geometry = case.get("markerGeometry")
     if geometry:
         if case.get("markerCorners"):
-            marker_polygon(pixels, [tuple(point) for point in case["markerCorners"]], case.get("marker") == "occluded")
+            marker_polygon(pixels, [tuple(point) for point in case["markerCorners"]], case.get("markerMode") == "occluded")
         else:
             x, y, side = geometry["x"], geometry["y"], geometry["side"]
-            marker(pixels, x, y, side, case.get("marker") == "occluded", geometry.get("height"))
-        if case.get("marker") == "multiple":
+            marker(pixels, x, y, side, case.get("markerMode") == "occluded", geometry.get("height"))
+        if case.get("markerMode") == "multiple":
             marker(pixels, 90, 70, 100)
     if case.get("qualityFlag") == "blur":
         box_blur(pixels)

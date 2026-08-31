@@ -13,36 +13,43 @@
    third-party copyrighted image from the scene. Confirm both columns in the
    log before copying an image into an approved physical corpus location.
 
-## Capture 30 or more images
+## Required core gate: 30 physical captures
 
 Use the baseline iPhone standard Camera app; no Team-D app, backend, or API is
 needed. Put the marker in the lower-right on the same plane as the garment and
 at least 30mm from it. Capture the whole garment and marker from overhead.
 
-Record at least 30 photos. The rows below are an overlapping coverage matrix,
-not additive quotas: one photo may satisfy one valid distance/light row and one
-perspective or quality row. Spread distance, light tilt, and lighting; do not
-turn a failed condition into a valid scale result.
+T11-01's required physical gate is **at least 30 reviewed captures**. The
+core matrix below is exactly 30 and focuses on the required distribution of
+distance, tilt, and lighting. Do not count a single photo in more than one row.
+Spread conditions; never turn a failed condition into a valid scale result.
 
 | Condition | Minimum |
 | --- | ---: |
 | valid: close / slight tilt / bright indoor | 6 |
 | valid: medium / overhead / diffuse indoor | 6 |
 | valid: far / slight tilt / dim indoor | 6 |
-| perspective valid, dark, blur | 3 each |
-| missing, multiple, too-small, occluded | 1 each |
-| edge 16px and 17px, ratio 0.649 and 0.650, overlap 23px and 24px | 1 each |
-| garment out-of-frame, segmentation failure, endpoints invalid | 1 each |
+| perspective-valid / dark / blur comparison | 4 each |
+
+The following 10 failure/boundary comparison captures are **optional
+additional evidence**, not a requirement that overrides the task's >=30 gate:
+missing, multiple, too-small, occluded; edge 16px; ratio 0.649; overlap 23px;
+garment out-of-frame; segmentation failure; and endpoints invalid. They may be
+collected after the 30-core gate as availability permits, with each scenario
+recorded separately.
 
 ## Annotation and review
 
-For each capture, write a non-identifying capture ID, device/iOS, ruler result,
-distance/tilt/light bands, scenario, and privacy/rights checks in the CSV.
-Annotate marker corners in top-left, top-right, bottom-right, bottom-left order;
-write derived px/cm, garment mask status, failure code (if any), and tape-measure
-length/width in the protected evaluation store. Only after review may those
-approved, rights-cleared images be stored under the future approved corpus
-policy. Keep raw camera photos out of this repository until that approval exists.
+For each capture, write the image path/hash, non-identifying capture ID,
+device/iOS, ruler result, distance/tilt/light bands, scenario, expected and
+observed failure, marker corners in top-left/top-right/bottom-right/bottom-left
+order, derived px/cm, mask status, measurement endpoints, tape-measure
+length/width, rights/PII checks, and annotation-complete flag in the CSV.
+Only after review may approved, rights-cleared images be stored under the future
+approved corpus policy. Keep raw camera photos out of this repository until
+that approval exists.
 
-The human must retain the completed evidence. T11-01 remains unchecked until
-the ruler check and all 30 physical captures are complete.
+The human must retain the completed evidence. Current blocker: **0/30** core
+captures and no ruler confirmation are recorded. T11-01 may meet its approved
+physical gate once the ruler check and 30 reviewed core captures are complete;
+the optional additional comparisons are not required for that decision.

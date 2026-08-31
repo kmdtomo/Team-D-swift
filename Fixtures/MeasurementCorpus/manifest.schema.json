@@ -1,43 +1,26 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Team-D T11-01 measurement corpus manifest",
-  "type": "object",
-  "required": ["schemaVersion", "generator", "marker", "thresholds", "failureCodes", "cases"],
-  "properties": {
-    "schemaVersion": {"const": 1},
-    "generator": {"type": "string", "const": "generate_synthetic.py"},
-    "marker": {
-      "type": "object",
-      "required": ["outerMm", "blackFrameMm", "whiteInnerMm", "printScale"],
-      "properties": {
-        "outerMm": {"const": 50.0},
-        "blackFrameMm": {"const": 5.0},
-        "whiteInnerMm": {"const": 40.0},
-        "printScale": {"const": "100%"}
-      },
-      "additionalProperties": false
-    },
-    "thresholds": {"type": "object"},
-    "failureCodes": {"type": "array", "minItems": 8, "items": {"type": "string"}},
-    "cases": {
-      "type": "array",
-      "minItems": 1,
-      "items": {
-        "type": "object",
-        "required": ["id", "file", "sha256", "expectedCorners", "expectedScalePxPerCm", "expectedMask", "expectedMeasurementsCm", "expectedFailure", "failurePair"],
-        "properties": {
-          "id": {"type": "string"},
-          "file": {"type": "string", "pattern": "^[a-z0-9-]+\\.png$"},
-          "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
-          "expectedCorners": {"type": ["array", "null"]},
-          "expectedScalePxPerCm": {"type": ["number", "null"]},
-          "expectedMask": {"type": "string"},
-          "expectedMeasurementsCm": {"type": "object", "required": ["length", "width"]},
-          "expectedFailure": {"type": ["string", "null"]},
-          "failurePair": {"type": "object"}
-        }
-      }
-    }
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "title":"Team-D T11-01 measurement corpus manifest",
+  "$defs":{
+    "point":{"type":"array","minItems":2,"maxItems":2,"items":{"type":"number"}},
+    "corners":{"type":"array","minItems":4,"maxItems":4,"items":{"$ref":"#/$defs/point"}},
+    "markerGeometry":{"type":"object","required":["x","y","side"],"properties":{"x":{"type":"number"},"y":{"type":"number"},"side":{"type":"number","exclusiveMinimum":0},"height":{"type":"number","exclusiveMinimum":0}},"additionalProperties":false},
+    "mask":{"type":"object","required":["status","polygon"],"properties":{"status":{"enum":["garment_complete","garment_clipped","segmentation_failed","quality_rejected"]},"polygon":{"type":["array","null"],"items":{"$ref":"#/$defs/point"}}},"additionalProperties":false},
+    "endpoints":{"type":"object","required":["lengthStart","lengthEnd","widthStart","widthEnd"],"properties":{"lengthStart":{"$ref":"#/$defs/point"},"lengthEnd":{"$ref":"#/$defs/point"},"widthStart":{"$ref":"#/$defs/point"},"widthEnd":{"$ref":"#/$defs/point"}},"additionalProperties":false},
+    "values":{"type":"object","required":["length","width"],"properties":{"length":{"type":"number","exclusiveMinimum":0},"width":{"type":"number","exclusiveMinimum":0}},"additionalProperties":false},
+    "annotation":{"type":"object","required":["mask","endpointsPx","valuesCm"],"properties":{"mask":{"$ref":"#/$defs/mask"},"endpointsPx":{"$ref":"#/$defs/endpoints"},"valuesCm":{"anyOf":[{"$ref":"#/$defs/values"},{"type":"null"}]}},"additionalProperties":false},
+    "failurePair":{"type":"object","propertyNames":{"enum":["MARKER_MISSING","MARKER_MULTIPLE","MARKER_TOO_SMALL","MARKER_OCCLUDED","GARMENT_OUT_OF_FRAME","GARMENT_MARKER_OVERLAP","SEGMENTATION_FAILED","ENDPOINTS_INVALID"]},"additionalProperties":{"type":"boolean"}},
+    "boundary":{"type":"object","properties":{"minimumMarkerSidePx":{"type":"number"},"edgeMarginPx":{"type":"number"},"sideRatio":{"type":"number"},"garmentMarkerGapPx":{"type":"number"},"compatibilityMapping":{"const":"no valid marker candidate accepted"}},"additionalProperties":false}
   },
-  "additionalProperties": false
+  "type":"object","required":["schemaVersion","generator","image","marker","thresholds","failureCodes","artifacts","annotations","cases"],
+  "properties":{
+    "schemaVersion":{"const":2},"generator":{"const":"generate_synthetic.py"},
+    "image":{"type":"object","required":["format","width","height"],"properties":{"format":{"const":"PNG-RGB8"},"width":{"const":800},"height":{"const":800}},"additionalProperties":false},
+    "marker":{"type":"object","required":["outerMm","blackFrameMm","whiteInnerMm","printScale"],"properties":{"outerMm":{"const":50.0},"blackFrameMm":{"const":5.0},"whiteInnerMm":{"const":40.0},"printScale":{"const":"100%"}},"additionalProperties":false},
+    "thresholds":{"type":"object","required":["minimumMarkerSidePx","edgeMarginPx","minimumSideRatio","minimumGarmentMarkerGapPx"],"properties":{"minimumMarkerSidePx":{"const":80},"edgeMarginPx":{"const":16},"minimumSideRatio":{"const":0.65},"minimumGarmentMarkerGapPx":{"const":24}},"additionalProperties":false},
+    "failureCodes":{"type":"array","minItems":8,"maxItems":8,"uniqueItems":true,"items":{"enum":["MARKER_MISSING","MARKER_MULTIPLE","MARKER_TOO_SMALL","MARKER_OCCLUDED","GARMENT_OUT_OF_FRAME","GARMENT_MARKER_OVERLAP","SEGMENTATION_FAILED","ENDPOINTS_INVALID"]}},
+    "artifacts":{"type":"array","minItems":1,"maxItems":1,"items":{"type":"object","required":["path","sha256","generatedBy","pageSize","markerGeometry","dependency"],"properties":{"path":{"const":"output/pdf/t11-01-50mm-marker.pdf"},"sha256":{"type":"string","pattern":"^[0-9a-f]{64}$"},"generatedBy":{"const":"scripts/t11_01_measurement_corpus/marker_pdf.py"},"pageSize":{"const":"A4 595.276x841.890pt"},"markerGeometry":{"type":"object","required":["outerMm","blackFrameMm","whiteInnerMm"],"properties":{"outerMm":{"const":50.0},"blackFrameMm":{"const":5.0},"whiteInnerMm":{"const":40.0}},"additionalProperties":false},"dependency":{"type":"object","required":["name","version","license","provenance"],"properties":{"name":{"const":"ReportLab"},"version":{"const":"4.4.9"},"license":{"const":"BSD-3-Clause"},"provenance":{"const":"https://www.reportlab.com/software/opensource/"}},"additionalProperties":false}},"additionalProperties":false}},
+    "annotations":{"type":"object","minProperties":1,"additionalProperties":{"$ref":"#/$defs/annotation"}},
+    "cases":{"type":"array","minItems":1,"items":{"type":"object","required":["id","file","sha256","markerMode","markerGeometry","markerCorners","expectedCorners","renderedScalePxPerCm","scaleAccepted","annotationId","expectedFailure","failurePair","boundary","qualityHint"],"properties":{"id":{"type":"string","minLength":1},"file":{"type":"string","pattern":"^[a-z0-9-]+\\.png$"},"sha256":{"type":"string","pattern":"^[0-9a-f]{64}$"},"markerMode":{"enum":["none","valid","multiple","occluded"]},"markerGeometry":{"anyOf":[{"$ref":"#/$defs/markerGeometry"},{"type":"null"}]},"markerCorners":{"anyOf":[{"$ref":"#/$defs/corners"},{"type":"null"}]},"expectedCorners":{"anyOf":[{"$ref":"#/$defs/corners"},{"type":"null"}]},"renderedScalePxPerCm":{"type":["number","null"]},"scaleAccepted":{"type":"boolean"},"annotationId":{"type":"string"},"expectedFailure":{"enum":["MARKER_MISSING","MARKER_MULTIPLE","MARKER_TOO_SMALL","MARKER_OCCLUDED","GARMENT_OUT_OF_FRAME","GARMENT_MARKER_OVERLAP","SEGMENTATION_FAILED","ENDPOINTS_INVALID",null]},"failurePair":{"$ref":"#/$defs/failurePair"},"boundary":{"anyOf":[{"$ref":"#/$defs/boundary"},{"type":"null"}]},"qualityHint":{"enum":["TOO_DARK","TOO_BLURRY",null]},"garmentMode":{"enum":["out_of_frame","low_contrast","endpoint_invalid"]},"qualityFlag":{"enum":["dark","blur"]}},"additionalProperties":false}}
+  },"additionalProperties":false
 }

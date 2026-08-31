@@ -227,7 +227,7 @@
   - device: not required
   - limitations: TypeScript still permits `sequence=0`; Swift rejects it following the implemented Python wire and recorded compatibility decision. T03-02 intentionally owns the remaining endpoint envelopes.
 
-- [ ] **T03-02 version付きHTTP契約とclient境界を固定する**
+- [x] **T03-02 version付きHTTP契約とclient境界を固定する**
   - 担当する責務: レーンA/Cが、既存Python FastAPIを共用するiOS向け契約を凍結し、backend実装の有無を可視化する。
   - 依存する先行タスク: T03-01。
   - 実装対象: 実装済みhealth/tokenと、未実装のshot判定、測定点提案、背景生成、mask取得のavailability matrix、OpenAPI/JSON Schema、multipart仕様、timeout（初期値 analyze 20秒、mask 35秒、背景60秒）、error envelope/idempotency方針。
@@ -235,6 +235,16 @@
   - 自動テスト方法: schema lint、golden payload validation、mock serverに対するURLSession contract testを実行する。
   - 実機確認が必要か: 不要。
   - fixture / live: 両方。
+
+### T03-02 検証記録（2026-08-31）
+
+- Verification (2026-08-31):
+  - commit/build: `b0eed5c feat: freeze v1 backend HTTP contract`, `21b880f feat: add versioned backend API client boundary`; clean clone `/tmp/teamd-t03-02-final.P7pa4z/repo`; Xcode 26.2 (17C52), Swift 6.2.3, iPhone 16 Pro Simulator (iOS 18.5, arm64)
+  - automated tests: T01 lints passed; `python3 scripts/lint_t03_02.py` passed; `python3 scripts/test_lint_t03_02.py` passed 6/6; Swift package tests passed 34/34; `./scripts/docs_smoke_fixture.sh` passed (UI 1/1, `TEST SUCCEEDED`, 3 known AppIntents warnings / 0 unexpected, 24 seconds, status unchanged); `git diff --check` passed
+  - fixture: OpenAPI 3.1 v1 freezes six HTTP paths, strict schemas/goldens, JPEG/PNG/HEIC multipart parts, text-only background, idempotency, timeouts, and errors. URLProtocol planned-four tests perform zero network calls and do not fall back to fixtures.
+  - live: fresh pinned archive `/private/tmp/teamd-t03-02-source.hUiTPk` at `44065d41e8906d34e5d8e11d7cd4cc14b25d17f2`; sibling venv `pytest -rs tests/test_livekit_token.py` passed 8 with 1 skipped. The skip is the unbuilt browser-bundle secret scan; a Web build is prohibited in this Swift repository. Current source health/token tests pass; planned four endpoints and Agent push remain false, and `/api/analyze-live` is absent.
+  - device: not required
+  - limitations: the four endpoints and Agent vision-to-push wiring remain shared-backend blockers; availability remains false until implementation plus protected contract smoke. T14-02 owns the styleId allowlist. No Swift substitute backend, OpenCV, or Web build was added.
 
 - [ ] **T03-03 fixture/live設定と秘密情報境界を実装する**
   - 担当する責務: レーンA/Cが、モードを明示し、live障害をfixture成功へ偽装できない構成にする。

@@ -16,57 +16,124 @@ import Testing
     #expect(Set(manifest.cases.map(\.id)).count == manifest.cases.count)
 }
 
-@Test func deterministicT1101CorpusClassifiesEveryFailureAndScale() throws {
+@Test func productionApplePipelineClassifiesAllT1101SyntheticCases() throws {
     let manifest = try loadCorpusManifest()
+    let pipeline = AppleMeasurementPoCPipeline()
     for fixture in manifest.cases {
         let image = try SyntheticFixtureImage.make(fixture, size: manifest.image.width)
         let annotation = try #require(manifest.annotations[fixture.annotationId])
-        let pipeline = AppleMeasurementPoCPipeline(
-            markerDetector: FixtureMarkerDetector(fixture: fixture),
-            contourDetector: FixtureContourDetector(fixture: fixture, annotation: annotation),
-            perspectiveCorrector: FixturePerspectiveCorrector(fixture: fixture),
-            qualityAnalyzer: FixtureQualityAnalyzer(fixture: fixture)
-        )
-        let outcome = try pipeline.analyze(
+        let outcome = pipeline.analyze(
             image: image,
             proposedEndpoints: annotation.endpointsPx.orderedPoints
         )
-        try assert(outcome: outcome, matches: fixture)
+        try assertProduction(outcome: outcome, matches: fixture)
     }
 }
 
-@Test func corpusAnalysisIsReproducibleAcrossRepeatedRuns() throws {
+@Test func productionApplePipelineIsReproducibleAcrossTheT1101Corpus() throws {
     let manifest = try loadCorpusManifest()
+    let pipeline = AppleMeasurementPoCPipeline()
+    for fixture in manifest.cases {
+        let image = try SyntheticFixtureImage.make(fixture, size: manifest.image.width)
+        let annotation = try #require(manifest.annotations[fixture.annotationId])
+        let first = pipeline.analyze(
+            image: image,
+            proposedEndpoints: annotation.endpointsPx.orderedPoints
+        )
+        let second = pipeline.analyze(
+            image: image,
+            proposedEndpoints: annotation.endpointsPx.orderedPoints
+        )
+        #expect(outcomeSummary(first) == outcomeSummary(second), "\(fixture.id)")
+    }
+}
+
+@Test func pipelineMapsSubsystemErrorsToRecoverableFiniteOutcomes() throws {
     let image = try SyntheticFixtureImage.solid(
-        width: manifest.image.width,
-        height: manifest.image.height,
+        width: 800,
+        height: 800,
         color: (234, 232, 224, 255)
     )
-    var baseline: [String]?
-    for _ in 0..<5 {
-        var observed: [String] = []
-        for fixture in manifest.cases {
-            let annotation = try #require(manifest.annotations[fixture.annotationId])
-            let pipeline = AppleMeasurementPoCPipeline(
-                markerDetector: FixtureMarkerDetector(fixture: fixture),
-                contourDetector: FixtureContourDetector(fixture: fixture, annotation: annotation),
-                perspectiveCorrector: FixturePerspectiveCorrector(fixture: fixture),
-                qualityAnalyzer: FixtureQualityAnalyzer(fixture: fixture)
-            )
-            observed.append(
-                outcomeSummary(
-                    try pipeline.analyze(
-                        image: image,
-                        proposedEndpoints: annotation.endpointsPx.orderedPoints
-                    )
-                )
-            )
-        }
-        if let baseline {
-            #expect(observed == baseline)
-        } else {
-            baseline = observed
-        }
+    let marker = MeasurementMarkerCandidate(corners: validMarker)
+    let garment = MeasurementGarmentContour(points: validGarment)
+    let corrected = RectifiedMarkerImage(image: image, rectifiedSidePixels: 100)
+
+    #expect(
+        outcomeSummary(AppleMeasurementPoCPipeline(
+            markerDetector: ThrowingMarkerDetector(),
+            contourDetector: StaticContourDetector(.contour(garment)),
+            perspectiveCorrector: StaticPerspectiveCorrector(corrected),
+            qualityAnalyzer: StaticQualityAnalyzer(.acceptable)
+        ).analyze(image: image)) == "FAILURE:MARKER_MISSING"
+    )
+    #expect(
+        outcomeSummary(AppleMeasurementPoCPipeline(
+            markerDetector: StaticMarkerDetector([marker]),
+            contourDetector: ThrowingContourDetector(),
+            perspectiveCorrector: StaticPerspectiveCorrector(corrected),
+            qualityAnalyzer: StaticQualityAnalyzer(.acceptable)
+        ).analyze(image: image)) == "FAILURE:SEGMENTATION_FAILED"
+    )
+    #expect(
+        outcomeSummary(AppleMeasurementPoCPipeline(
+            markerDetector: StaticMarkerDetector([marker]),
+            contourDetector: StaticContourDetector(.contour(garment)),
+            perspectiveCorrector: ThrowingPerspectiveCorrector(),
+            qualityAnalyzer: StaticQualityAnalyzer(.acceptable)
+        ).analyze(image: image)) == "FAILURE:MARKER_MISSING"
+    )
+    #expect(
+        outcomeSummary(AppleMeasurementPoCPipeline(
+            markerDetector: StaticMarkerDetector([marker]),
+            contourDetector: StaticContourDetector(.contour(garment)),
+            perspectiveCorrector: StaticPerspectiveCorrector(corrected),
+            qualityAnalyzer: ThrowingQualityAnalyzer()
+        ).analyze(image: image)) == "QUALITY:ANALYZER_UNAVAILABLE"
+    )
+    #expect(
+        outcomeSummary(AppleMeasurementPoCPipeline(
+            markerDetector: StaticMarkerDetector([marker]),
+            contourDetector: StaticContourDetector(.contour(garment)),
+            perspectiveCorrector: StaticPerspectiveCorrector(corrected),
+            qualityAnalyzer: StaticQualityAnalyzer(.acceptable),
+            imageNormalizer: ThrowingImageNormalizer()
+        ).analyze(image: image)) == "QUALITY:ANALYZER_UNAVAILABLE"
+    )
+}
+
+@Test func polygonClearanceRejects23PixelsAndAccepts24Pixels() throws {
+    let image = try SyntheticFixtureImage.solid(
+        width: 800,
+        height: 800,
+        color: (234, 232, 224, 255)
+    )
+    let garment = MeasurementGarmentContour(points: [
+        MeasurementPixelPoint(x: 110, y: 130),
+        MeasurementPixelPoint(x: 550, y: 130),
+        MeasurementPixelPoint(x: 550, y: 710),
+        MeasurementPixelPoint(x: 110, y: 710),
+    ])
+    let corrector = StaticPerspectiveCorrector(
+        RectifiedMarkerImage(image: image, rectifiedSidePixels: 100)
+    )
+    func outcome(markerLeft: Double) -> MeasurementPoCOutcome {
+        let marker = MeasurementMarkerCandidate(corners: MeasurementQuadrilateral(
+            topLeft: MeasurementPixelPoint(x: markerLeft, y: 610),
+            topRight: MeasurementPixelPoint(x: markerLeft + 100, y: 610),
+            bottomRight: MeasurementPixelPoint(x: markerLeft + 100, y: 710),
+            bottomLeft: MeasurementPixelPoint(x: markerLeft, y: 710)
+        ))
+        return AppleMeasurementPoCPipeline(
+            markerDetector: StaticMarkerDetector([marker]),
+            contourDetector: StaticContourDetector(.contour(garment)),
+            perspectiveCorrector: corrector,
+            qualityAnalyzer: StaticQualityAnalyzer(.acceptable)
+        ).analyze(image: image)
+    }
+    #expect(outcomeSummary(outcome(markerLeft: 573)) == "FAILURE:GARMENT_MARKER_OVERLAP")
+    guard case .success = outcome(markerLeft: 574) else {
+        Issue.record("24px polygon clearance must be accepted")
+        return
     }
 }
 
@@ -110,14 +177,21 @@ import Testing
     let second = try corrector.rectifyMarker(in: image, corners: corners)
 
     #expect(first.image.width == first.image.height)
-    #expect(first.image.width == 102)
-    #expect(abs(first.rectifiedSidePixels - corners.rectifiedSideEstimate) < 0.000_001)
+    #expect(first.image.width == 99)
+    let frozenPixelsPerCentimeter = 20.0
+    let observedPixelsPerCentimeter = first.rectifiedSidePixels / 5
+    #expect(
+        abs(observedPixelsPerCentimeter - frozenPixelsPerCentimeter)
+            / frozenPixelsPerCentimeter <= 0.01
+    )
+    #expect(first.rectifiedSidePixels == second.rectifiedSidePixels)
     #expect(try rgbaBytes(first.image) == rgbaBytes(second.image))
 }
 
-@Test func visionFindsTheKnownDoubleSquareWithoutAcceptingMissingMarker() throws {
+@Test func realVisionMarkerDetectionCoversAvailableSyntheticPixelCases() throws {
     let manifest = try loadCorpusManifest()
     let valid = try #require(manifest.cases.first { $0.id == "valid" })
+    let perspective = try #require(manifest.cases.first { $0.id == "perspective-valid" })
     let missing = try #require(manifest.cases.first { $0.id == "marker-missing" })
     let detector = VisionRectangleMarkerDetector()
 
@@ -131,11 +205,90 @@ import Testing
         #expect(abs(pair.0.y - pair.1.y) <= 3)
     }
 
+    let perspectiveEvidence = try detector.detectMarkerEvidence(
+        in: SyntheticFixtureImage.make(perspective, size: manifest.image.width)
+    )
+    let perspectiveCandidate = try #require(perspectiveEvidence.candidates.first)
+    for pair in zip(perspectiveCandidate.corners.points, try #require(perspective.quadrilateral).points) {
+        #expect(abs(pair.0.x - pair.1.x) <= 4)
+        #expect(abs(pair.0.y - pair.1.y) <= 4)
+    }
+
     let missingEvidence = try detector.detectMarkerEvidence(
         in: SyntheticFixtureImage.make(missing, size: manifest.image.width)
     )
     #expect(missingEvidence.candidates.isEmpty)
     #expect(!missingEvidence.hasOccludedMarkerEvidence)
+}
+
+@Test func boundedMarkerFallbackRequiresFiveMillimeterNestedFrameAndMapsCoordinates() throws {
+    let manifest = try loadCorpusManifest()
+    let valid = try #require(manifest.cases.first { $0.id == "valid" })
+    let occluded = try #require(manifest.cases.first { $0.id == "marker-occluded" })
+    let detector = VisionRectangleMarkerDetector(usesVisionRectangles: false)
+
+    #expect(VisionRectangleMarkerDetector.fallbackMaximumDimension == 320)
+    let validEvidence = try detector.detectMarkerEvidence(
+        in: SyntheticFixtureImage.make(valid, size: manifest.image.width)
+    )
+    let validCandidate = try #require(validEvidence.candidates.first)
+    #expect(validEvidence.candidates.count == 1)
+    for pair in zip(validCandidate.corners.points, try #require(valid.quadrilateral).points) {
+        #expect(abs(pair.0.x - pair.1.x) <= 3)
+        #expect(abs(pair.0.y - pair.1.y) <= 3)
+    }
+
+    let occludedEvidence = try detector.detectMarkerEvidence(
+        in: SyntheticFixtureImage.make(occluded, size: manifest.image.width)
+    )
+    #expect(occludedEvidence.candidates.isEmpty)
+
+    var hollowGraphic = PixelCanvas(width: 800, height: 800, color: (234, 232, 224, 255))
+    hollowGraphic.drawMarker(
+        x: 580,
+        y: 610,
+        width: 100,
+        height: 100,
+        occluded: false,
+        borderFraction: 0.02
+    )
+    let hollowEvidence = try detector.detectMarkerEvidence(in: hollowGraphic.image())
+    #expect(hollowEvidence.candidates.isEmpty)
+
+    var large = PixelCanvas(width: 1_600, height: 800, color: (234, 232, 224, 255))
+    large.drawMarker(x: 1_200, y: 500, width: 200, height: 200, occluded: false)
+    let mapped = try #require(detector.detectMarkerEvidence(in: large.image()).candidates.first)
+    let expected = MeasurementQuadrilateral(
+        topLeft: MeasurementPixelPoint(x: 1_200, y: 500),
+        topRight: MeasurementPixelPoint(x: 1_400, y: 500),
+        bottomRight: MeasurementPixelPoint(x: 1_400, y: 700),
+        bottomLeft: MeasurementPixelPoint(x: 1_200, y: 700)
+    )
+    for pair in zip(mapped.corners.points, expected.points) {
+        #expect(abs(pair.0.x - pair.1.x) <= 5)
+        #expect(abs(pair.0.y - pair.1.y) <= 5)
+    }
+}
+
+@Test func pipelineNormalizesRotatedPixelsIntoUprightCoordinateContract() throws {
+    let manifest = try loadCorpusManifest()
+    let fixture = try #require(manifest.cases.first { $0.id == "valid" })
+    let annotation = try #require(manifest.annotations[fixture.annotationId])
+    let upright = try SyntheticFixtureImage.make(fixture, size: manifest.image.width)
+    let rotatedClockwise = try orientedImage(upright, exifOrientation: 6)
+    let pipeline = AppleMeasurementPoCPipeline()
+
+    let baseline = pipeline.analyze(
+        image: upright,
+        proposedEndpoints: annotation.endpointsPx.orderedPoints
+    )
+    let normalized = pipeline.analyze(
+        image: rotatedClockwise,
+        orientation: .left,
+        proposedEndpoints: annotation.endpointsPx.orderedPoints
+    )
+    try assertProduction(outcome: baseline, matches: fixture)
+    try assertProduction(outcome: normalized, matches: fixture)
 }
 
 @Test func accelerateQualitySeparatesNormalAndDarkFixture() throws {
@@ -168,7 +321,7 @@ import Testing
     #expect(contour.bounds.maxY < 798)
 }
 
-private func assert(outcome: MeasurementPoCOutcome, matches fixture: CorpusCase) throws {
+private func assertProduction(outcome: MeasurementPoCOutcome, matches fixture: CorpusCase) throws {
     if fixture.qualityHint == "TOO_DARK" || fixture.qualityHint == "TOO_BLURRY" {
         guard case let .qualityRejected(hint) = outcome else {
             Issue.record("\(fixture.id): expected a quality rejection, got \(outcomeSummary(outcome))")
@@ -195,8 +348,15 @@ private func assert(outcome: MeasurementPoCOutcome, matches fixture: CorpusCase)
     }
     #expect(fixture.scaleAccepted)
     let expectedScale = try #require(fixture.renderedScalePxPerCm)
-    #expect(abs(success.pixelsPerCentimeter - expectedScale) < 0.000_001)
-    #expect(success.markerCorners == fixture.quadrilateral)
+    #expect(
+        abs(success.pixelsPerCentimeter - expectedScale) / expectedScale <= 0.01,
+        "\(fixture.id): scale \(success.pixelsPerCentimeter), expected \(expectedScale)"
+    )
+    let expectedCorners = try #require(fixture.quadrilateral)
+    for pair in zip(success.markerCorners.points, expectedCorners.points) {
+        #expect(abs(pair.0.x - pair.1.x) <= 4, "\(fixture.id): x corner")
+        #expect(abs(pair.0.y - pair.1.y) <= 4, "\(fixture.id): y corner")
+    }
 }
 
 private func outcomeSummary(_ outcome: MeasurementPoCOutcome) -> String {
@@ -210,87 +370,110 @@ private func outcomeSummary(_ outcome: MeasurementPoCOutcome) -> String {
     }
 }
 
-private struct FixtureMarkerDetector: MeasurementMarkerDetecting {
-    let fixture: CorpusCase
+private enum TestSubsystemError: Error {
+    case unavailable
+}
+
+private let validMarker = MeasurementQuadrilateral(
+    topLeft: MeasurementPixelPoint(x: 580, y: 610),
+    topRight: MeasurementPixelPoint(x: 680, y: 610),
+    bottomRight: MeasurementPixelPoint(x: 680, y: 710),
+    bottomLeft: MeasurementPixelPoint(x: 580, y: 710)
+)
+
+private let validGarment = [
+    MeasurementPixelPoint(x: 110, y: 215),
+    MeasurementPixelPoint(x: 220, y: 215),
+    MeasurementPixelPoint(x: 220, y: 130),
+    MeasurementPixelPoint(x: 440, y: 130),
+    MeasurementPixelPoint(x: 440, y: 215),
+    MeasurementPixelPoint(x: 550, y: 215),
+    MeasurementPixelPoint(x: 550, y: 410),
+    MeasurementPixelPoint(x: 440, y: 410),
+    MeasurementPixelPoint(x: 440, y: 560),
+    MeasurementPixelPoint(x: 220, y: 560),
+    MeasurementPixelPoint(x: 220, y: 410),
+    MeasurementPixelPoint(x: 110, y: 410),
+]
+
+private struct ThrowingMarkerDetector: MeasurementMarkerDetecting {
+    func detectMarkerEvidence(in _: CGImage) throws -> MeasurementMarkerEvidence {
+        throw TestSubsystemError.unavailable
+    }
+}
+
+private struct StaticMarkerDetector: MeasurementMarkerDetecting {
+    let candidates: [MeasurementMarkerCandidate]
+
+    init(_ candidates: [MeasurementMarkerCandidate]) {
+        self.candidates = candidates
+    }
 
     func detectMarkerEvidence(in _: CGImage) throws -> MeasurementMarkerEvidence {
-        if fixture.markerMode == "none" {
-            return MeasurementMarkerEvidence(candidates: [])
-        }
-        if fixture.markerMode == "occluded" {
-            return MeasurementMarkerEvidence(candidates: [], hasOccludedMarkerEvidence: true)
-        }
-        guard let main = fixture.quadrilateral else {
-            return MeasurementMarkerEvidence(candidates: [])
-        }
-        var candidates = [MeasurementMarkerCandidate(corners: main)]
-        if fixture.markerMode == "multiple" {
-            candidates.append(
-                MeasurementMarkerCandidate(
-                    corners: MeasurementQuadrilateral(
-                        topLeft: MeasurementPixelPoint(x: 90, y: 70),
-                        topRight: MeasurementPixelPoint(x: 190, y: 70),
-                        bottomRight: MeasurementPixelPoint(x: 190, y: 170),
-                        bottomLeft: MeasurementPixelPoint(x: 90, y: 170)
-                    )
-                )
-            )
-        }
-        return MeasurementMarkerEvidence(candidates: candidates)
+        MeasurementMarkerEvidence(candidates: candidates)
     }
 }
 
-private struct FixtureContourDetector: MeasurementGarmentContourDetecting {
-    let fixture: CorpusCase
-    let annotation: CorpusAnnotation
+private struct ThrowingContourDetector: MeasurementGarmentContourDetecting {
+    func detectGarmentContour(in _: CGImage) throws -> MeasurementGarmentContourEvidence {
+        throw TestSubsystemError.unavailable
+    }
+}
+
+private struct StaticContourDetector: MeasurementGarmentContourDetecting {
+    let evidence: MeasurementGarmentContourEvidence
+
+    init(_ evidence: MeasurementGarmentContourEvidence) {
+        self.evidence = evidence
+    }
 
     func detectGarmentContour(in _: CGImage) throws -> MeasurementGarmentContourEvidence {
-        switch fixture.garmentMode {
-        case "out_of_frame":
-            return .outOfFrame
-        case "low_contrast":
-            return .unavailable
-        default:
-            var polygon = try #require(annotation.mask.polygon).map(MeasurementPixelPoint.init)
-            if fixture.id == "overlap-23px" || fixture.id == "overlap-24px" {
-                // These two synthetic threshold cases intentionally annotate
-                // the horizontal clearance only. Extend the test contour into
-                // the marker's vertical band so the generic 2D gap validator
-                // observes the frozen 23/24 px boundary.
-                polygon = [
-                    MeasurementPixelPoint(x: 110, y: 130),
-                    MeasurementPixelPoint(x: 550, y: 130),
-                    MeasurementPixelPoint(x: 550, y: 710),
-                    MeasurementPixelPoint(x: 110, y: 710),
-                ]
-            }
-            return .contour(MeasurementGarmentContour(points: polygon))
-        }
+        evidence
     }
 }
 
-private struct FixturePerspectiveCorrector: MeasurementPerspectiveCorrecting {
-    let fixture: CorpusCase
+private struct ThrowingPerspectiveCorrector: MeasurementPerspectiveCorrecting {
+    func rectifyMarker(in _: CGImage, corners _: MeasurementQuadrilateral) throws -> RectifiedMarkerImage {
+        throw TestSubsystemError.unavailable
+    }
+}
+
+private struct StaticPerspectiveCorrector: MeasurementPerspectiveCorrecting {
+    let result: RectifiedMarkerImage
+
+    init(_ result: RectifiedMarkerImage) {
+        self.result = result
+    }
 
     func rectifyMarker(in _: CGImage, corners _: MeasurementQuadrilateral) throws -> RectifiedMarkerImage {
-        let scale = try #require(fixture.renderedScalePxPerCm)
-        let side = Int((scale * 5).rounded())
-        return RectifiedMarkerImage(
-            image: try SyntheticFixtureImage.solid(width: side, height: side, color: (255, 255, 255, 255)),
-            rectifiedSidePixels: scale * 5
-        )
+        result
     }
 }
 
-private struct FixtureQualityAnalyzer: MeasurementImageQualityAnalyzing {
-    let fixture: CorpusCase
+private struct ThrowingQualityAnalyzer: MeasurementImageQualityAnalyzing {
+    func analyzeQuality(in _: CGImage) throws -> MeasurementImageQuality {
+        throw TestSubsystemError.unavailable
+    }
+}
+
+private struct ThrowingImageNormalizer: MeasurementImageNormalizing {
+    func uprightImage(
+        from _: CGImage,
+        orientation _: MeasurementImageOrientation
+    ) throws -> CGImage {
+        throw TestSubsystemError.unavailable
+    }
+}
+
+private struct StaticQualityAnalyzer: MeasurementImageQualityAnalyzing {
+    let quality: MeasurementImageQuality
+
+    init(_ quality: MeasurementImageQuality) {
+        self.quality = quality
+    }
 
     func analyzeQuality(in _: CGImage) throws -> MeasurementImageQuality {
-        switch fixture.qualityHint {
-        case "TOO_DARK": .tooDark
-        case "TOO_BLURRY": .tooBlurry
-        default: .acceptable
-        }
+        quality
     }
 }
 
@@ -469,9 +652,16 @@ private struct PixelCanvas {
         }
     }
 
-    mutating func drawMarker(x: Int, y: Int, width: Int, height: Int, occluded: Bool) {
+    mutating func drawMarker(
+        x: Int,
+        y: Int,
+        width: Int,
+        height: Int,
+        occluded: Bool,
+        borderFraction: Double = 0.10
+    ) {
         fillRect(x0: x, y0: y, x1: x + width, y1: y + height, color: (0, 0, 0, 255))
-        let inset = Int((Double(min(width, height)) * 0.1).rounded())
+        let inset = Int((Double(min(width, height)) * borderFraction).rounded())
         fillRect(
             x0: x + inset,
             y0: y + inset,
@@ -495,7 +685,7 @@ private struct PixelCanvas {
         let centerX = corners.map(\.0).reduce(0, +) / 4
         let centerY = corners.map(\.1).reduce(0, +) / 4
         let inner = corners.map {
-            (($0.0 + (centerX - $0.0) * 0.1).rounded(), ($0.1 + (centerY - $0.1) * 0.1).rounded())
+            (($0.0 + (centerX - $0.0) * 0.2).rounded(), ($0.1 + (centerY - $0.1) * 0.2).rounded())
         }
         fillPolygon(inner, color: (255, 255, 255, 255))
         if occluded {
@@ -613,4 +803,17 @@ private func rgbaBytes(_ image: CGImage) throws -> [UInt8] {
     }
     #expect(created)
     return bytes
+}
+
+private func orientedImage(_ image: CGImage, exifOrientation: Int32) throws -> CGImage {
+    let oriented = CIImage(cgImage: image).oriented(forExifOrientation: exifOrientation)
+    let extent = oriented.extent.standardized.integral
+    let translated = oriented.transformed(
+        by: CGAffineTransform(translationX: -extent.minX, y: -extent.minY)
+    )
+    let context = CIContext(options: [.useSoftwareRenderer: true, .cacheIntermediates: false])
+    return try #require(context.createCGImage(
+        translated,
+        from: CGRect(origin: .zero, size: extent.size)
+    ))
 }

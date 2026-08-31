@@ -29,21 +29,37 @@
     {
       "surface": "GET /api/health",
       "sourcePaths": ["backend/app.py"],
+      "owner": "neko-jpg/Team-D shared backend owner",
+      "contract": "pinned-source GET health surface returns only status=ok and no secret",
+      "neededBy": "protected staging preflight",
+      "releaseCondition": "implemented at pinned source; protected shared-HTTPS health smoke is tracked separately",
       "evidence": "create_app registers GET /api/health and returns only status=ok"
     },
     {
       "surface": "POST /api/livekit-token",
       "sourcePaths": ["backend/app.py", "backend/livekit_token.py"],
+      "owner": "neko-jpg/Team-D shared backend owner",
+      "contract": "strict sessionId request to a 90 second default and 300 second hard-max token with room join, camera/data publish, and explicit subscribe deny",
+      "neededBy": "T08-02 protected live smoke",
+      "releaseCondition": "implemented at pinned source; protected token-claim and Room-join smoke is tracked separately",
       "evidence": "router is included; token grants publish camera and data, and deny subscribe"
     },
     {
       "surface": "LiveKit camera-only transport core",
       "sourcePaths": ["backend/live_agent.py"],
+      "owner": "neko-jpg/Team-D shared backend owner",
+      "contract": "explicit SUBSCRIBE_NONE followed by camera-video-only subscription, VideoStream capacity 1, and at most one inference in flight",
+      "neededBy": "T08-02 protected live smoke",
+      "releaseCondition": "implemented at pinned source; protected camera subscription is tracked separately",
       "evidence": "explicit SUBSCRIBE_NONE plus video/camera filtering, VideoStream capacity=1, and LatestFrameProcessor max_concurrency=1"
     },
     {
       "surface": "Guidance contract and state machine",
       "sourcePaths": ["backend/guidance_state_machine.py", "backend/providers/vision_guidance.py"],
+      "owner": "neko-jpg/Team-D shared backend owner",
+      "contract": "finite provider decision plus positive session-scoped sequence; GuidanceEvent is lossy and shot-change/resync state is reliable",
+      "neededBy": "T08-02 live guidance acceptance",
+      "releaseCondition": "implemented at pinned source; real provider and LiveKit publisher remain a separate blocker",
       "evidence": "finite provider decision; lossy GuidanceEvent and reliable shot/resync state carry positive session-scoped sequence"
     }
   ],

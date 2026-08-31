@@ -59,9 +59,37 @@ public struct ComparisonViewport: Sendable, Equatable {
     public let centerY: Double
 
     public init(zoom: Double = 1, centerX: Double = 0.5, centerY: Double = 0.5) {
-        self.zoom = Self.clamp(zoom.isFinite ? zoom : Self.minimumZoom, Self.minimumZoom, Self.maximumZoom)
-        self.centerX = Self.clamp(centerX.isFinite ? centerX : 0.5, 0, 1)
-        self.centerY = Self.clamp(centerY.isFinite ? centerY : 0.5, 0, 1)
+        let resolvedZoom = Self.clamp(zoom.isFinite ? zoom : Self.minimumZoom, Self.minimumZoom, Self.maximumZoom)
+        self.zoom = resolvedZoom
+        self.centerX = Self.clampCenter(centerX.isFinite ? centerX : 0.5, for: resolvedZoom)
+        self.centerY = Self.clampCenter(centerY.isFinite ? centerY : 0.5, for: resolvedZoom)
+    }
+
+    /// Returns the same viewport with a finite magnification applied. A zoom of
+    /// one keeps the complete image visible; greater zooms constrain the center
+    /// so that both comparison candidates retain identical valid crops.
+    public func magnified(by factor: Double) -> Self {
+        let resolvedFactor = factor.isFinite && factor > 0 ? factor : Self.minimumZoom / zoom
+        return .init(zoom: zoom * resolvedFactor, centerX: centerX, centerY: centerY)
+    }
+
+    /// Pans the displayed content by a normalized viewport translation. The
+    /// sign follows the drag: moving content right moves the crop center left.
+    public func panned(byNormalizedTranslationX x: Double, y: Double) -> Self {
+        let translationX = x.isFinite ? x : 0
+        let translationY = y.isFinite ? y : 0
+        return .init(
+            zoom: zoom,
+            centerX: centerX - translationX / zoom,
+            centerY: centerY - translationY / zoom
+        )
+    }
+
+    public static var initial: Self { .init() }
+
+    private static func clampCenter(_ value: Double, for zoom: Double) -> Double {
+        let visibleHalfExtent = 0.5 / zoom
+        return clamp(value, visibleHalfExtent, 1 - visibleHalfExtent)
     }
 
     private static func clamp(_ value: Double, _ lower: Double, _ upper: Double) -> Double {
@@ -76,6 +104,9 @@ public struct ImageComparisonState: Sendable, Equatable {
     public private(set) var composite: ImageComparisonCandidate?
     public private(set) var selection: ImageComparisonChoice?
     public private(set) var approvedOutputID: String?
+    /// Approval is typed so equal raw IDs can never change the user's choice.
+    /// `approvedOutputID` remains available as the downstream export boundary.
+    public private(set) var approvedChoice: ImageComparisonChoice?
     public private(set) var viewport: ComparisonViewport
 
     public init(
@@ -85,9 +116,10 @@ public struct ImageComparisonState: Sendable, Equatable {
     ) {
         precondition(!originalID.isEmpty, "An original front image ID is required")
         self.original = .init(id: originalID, choice: .original)
-        self.composite = compositeAvailability.candidate
+        self.composite = Self.validComposite(from: compositeAvailability, originalID: originalID)
         self.selection = nil
         self.approvedOutputID = nil
+        self.approvedChoice = nil
         self.viewport = viewport
     }
 
@@ -99,15 +131,6 @@ public struct ImageComparisonState: Sendable, Equatable {
         candidate(for: selection)
     }
 
-    /// The finite, app-owned choice behind an approved output ID. UI must use
-    /// this value rather than exposing an internal session image ID.
-    public var approvedChoice: ImageComparisonChoice? {
-        guard let approvedOutputID else { return nil }
-        if approvedOutputID == original.id { return .original }
-        if approvedOutputID == composite?.id { return .composite }
-        return nil
-    }
-
     public var approvedChoiceLabel: String? {
         approvedChoice?.localizedName
     }
@@ -117,40 +140,59 @@ public struct ImageComparisonState: Sendable, Equatable {
         guard selection != choice else { return }
         selection = choice
         approvedOutputID = nil
+        approvedChoice = nil
     }
 
     /// Explicit final confirmation. A selection alone is never approval.
     public mutating func confirmSelection() {
-        approvedOutputID = selectedCandidate?.id
+        guard let selectedCandidate else {
+            approvedOutputID = nil
+            approvedChoice = nil
+            return
+        }
+        approvedOutputID = selectedCandidate.id
+        approvedChoice = selectedCandidate.choice
     }
 
     public mutating func setViewport(_ viewport: ComparisonViewport) {
         self.viewport = viewport
     }
 
+    public mutating func magnifyViewport(by factor: Double) {
+        viewport = viewport.magnified(by: factor)
+    }
+
+    public mutating func panViewport(byNormalizedTranslationX x: Double, y: Double) {
+        viewport = viewport.panned(byNormalizedTranslationX: x, y: y)
+    }
+
+    public mutating func resetViewport() {
+        viewport = .initial
+    }
+
     /// Starts a replacement generation without retaining a stale composite as
     /// selectable. An already-approved original remains approved.
     public mutating func beginCompositeRegeneration() {
-        let invalidatedCompositeID = composite?.id
         composite = nil
         if selection == .composite {
             selection = nil
         }
-        if approvedOutputID == invalidatedCompositeID {
+        if approvedChoice == .composite {
             approvedOutputID = nil
+            approvedChoice = nil
         }
     }
 
     /// Replaces a generated result. If the old composite was selected or
     /// approved, invalidate both states before the new output can be chosen.
     public mutating func replaceComposite(with availability: CompositeComparisonAvailability) {
-        let previousCompositeID = composite?.id
-        composite = availability.candidate
+        composite = Self.validComposite(from: availability, originalID: original.id)
         if selection == .composite {
             selection = nil
         }
-        if approvedOutputID == previousCompositeID {
+        if approvedChoice == .composite {
             approvedOutputID = nil
+            approvedChoice = nil
         }
     }
 
@@ -160,6 +202,16 @@ public struct ImageComparisonState: Sendable, Equatable {
         case .composite: composite
         case nil: nil
         }
+    }
+
+    /// A composite with the original's session ID is ambiguous at the export
+    /// boundary. Reject it deterministically instead of making it selectable.
+    private static func validComposite(
+        from availability: CompositeComparisonAvailability,
+        originalID: String
+    ) -> ImageComparisonCandidate? {
+        guard let candidate = availability.candidate, candidate.id != originalID else { return nil }
+        return candidate
     }
 }
 
@@ -174,6 +226,8 @@ public struct ImageComparisonView<ImageContent: View>: View {
     @Binding private var state: ImageComparisonState
     private let imageContent: (ImageComparisonCandidate, ComparisonViewport) -> ImageContent
     private let onRegenerateComposite: () -> Void
+    @State private var magnificationStartViewport: ComparisonViewport?
+    @State private var panStartViewport: ComparisonViewport?
 
     public init(
         state: Binding<ImageComparisonState>,
@@ -196,6 +250,8 @@ public struct ImageComparisonView<ImageContent: View>: View {
                 if let composite = state.composite {
                     candidateSection(composite)
                 }
+
+                viewportControls
 
                 Button("背景を作り直す") {
                     state.beginCompositeRegeneration()
@@ -227,8 +283,7 @@ public struct ImageComparisonView<ImageContent: View>: View {
     @ViewBuilder
     private func candidateSection(_ candidate: ImageComparisonCandidate) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            imageContent(candidate, state.viewport)
-                .accessibilityHidden(true)
+            interactiveImage(candidate)
 
             Button {
                 state.select(candidate.choice)
@@ -248,6 +303,74 @@ public struct ImageComparisonView<ImageContent: View>: View {
             .accessibilityValue(state.selection == candidate.choice ? "選択中" : "未選択")
             .accessibilityHint("この画像を選択します。確定にはこの画像を使うを選びます")
         }
+    }
+
+    private func interactiveImage(_ candidate: ImageComparisonCandidate) -> some View {
+        imageContent(candidate, state.viewport)
+            .overlay {
+                GeometryReader { proxy in
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .simultaneousGesture(magnificationGesture)
+                        .simultaneousGesture(panGesture(in: proxy.size))
+                }
+            }
+            .accessibilityHidden(true)
+    }
+
+    private var magnificationGesture: some Gesture {
+        MagnificationGesture()
+            .onChanged { factor in
+                let initial = magnificationStartViewport ?? state.viewport
+                magnificationStartViewport = initial
+                state.setViewport(initial.magnified(by: factor))
+            }
+            .onEnded { _ in
+                magnificationStartViewport = nil
+            }
+    }
+
+    private func panGesture(in size: CGSize) -> some Gesture {
+        DragGesture()
+            .onChanged { value in
+                let initial = panStartViewport ?? state.viewport
+                panStartViewport = initial
+                let width = max(size.width, 1)
+                let height = max(size.height, 1)
+                state.setViewport(initial.panned(
+                    byNormalizedTranslationX: value.translation.width / width,
+                    y: value.translation.height / height
+                ))
+            }
+            .onEnded { _ in
+                panStartViewport = nil
+            }
+    }
+
+    private var viewportControls: some View {
+        HStack(spacing: 12) {
+            Button("縮小") {
+                state.magnifyViewport(by: 1 / 1.5)
+            }
+            .buttonStyle(.bordered)
+            .frame(minWidth: 44, minHeight: 44)
+            .accessibilityHint("2枚の画像を同じ表示範囲のまま縮小します")
+
+            Button("拡大") {
+                state.magnifyViewport(by: 1.5)
+            }
+            .buttonStyle(.bordered)
+            .frame(minWidth: 44, minHeight: 44)
+            .accessibilityHint("2枚の画像を同じ表示範囲のまま拡大します")
+
+            Button("表示位置をリセット") {
+                state.resetViewport()
+            }
+            .buttonStyle(.bordered)
+            .frame(minHeight: 44)
+            .accessibilityHint("拡大率と表示位置を初期状態に戻します")
+        }
+        .accessibilityElement(children: .contain)
     }
 
     private var approvalText: String {

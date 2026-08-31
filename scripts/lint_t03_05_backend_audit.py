@@ -91,9 +91,13 @@ def validate(audit: object) -> None:
 
     source_text = (ROOT / "requirements.md").read_text() + (ROOT / "task.md").read_text()
     assert source_text.count(SHA) >= 2
-    assert SHA in (ROOT / "Packages/Sources/APIClient/BackendAPIClient.swift").read_text()
-    openapi = json.loads((ROOT / "docs/contracts/openapi-v1.json").read_text())
-    unavailable = {path for path, value in openapi["paths"].items() if next(iter(value.values()))["x-source-availability"] == "unavailable"}
+    availability = json.loads((ROOT / "Contracts/HTTP/v1/availability.json").read_text())
+    assert availability["pinnedSourceSHA"] == SHA
+    unavailable = {
+        surface["path"]
+        for surface in availability["surfaces"].values()
+        if surface.get("available") is False and "path" in surface
+    }
     assert unavailable == {"/api/analyze-shot", "/api/suggest-measurement-points", "/api/generate-background", "/api/remove-background"}
 
 

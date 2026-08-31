@@ -1,10 +1,10 @@
 import CaptureKit
 import Foundation
 
-/// Versioned topics are required because LiveKit Swift's Room delegate exposes
-/// payload and topic, but not the packet reliability flag. The shared Agent must
-/// publish finite `GuidanceEvent` JSON on the lossy topic and leave reliable
-/// state bytes on the opaque reliable topic until T08-03 freezes that schema.
+/// Versioned topics are preferred because LiveKit Swift's Room delegate exposes
+/// payload and topic, but not the packet reliability flag. The current shared
+/// backend at `a25a854` publishes with an empty topic, so the hub also supports
+/// that explicitly audited wire by exact closed payload shape.
 public struct LiveGuidanceDataTopics: Equatable, Sendable {
     public static let version1 = LiveGuidanceDataTopics(
         validatedLossyGuidance: "teamd.guidance.lossy.v1",
@@ -46,6 +46,14 @@ struct LiveGuidanceRoomEventStreams: Sendable {
 /// Bounded delegate-to-AsyncStream adapter. Unknown topics are dropped instead
 /// of being guessed into either the guidance or workflow boundary.
 actor LiveGuidanceRoomEventHub {
+    private static let guidanceFields: Set<String> = [
+        "sessionId", "sequence", "shot", "code", "message", "confidence",
+        "observedAt", "expiresAt",
+    ]
+    private static let reliableStateFields: Set<String> = [
+        "type", "sessionId", "sequence", "shot", "code", "observedAt",
+    ]
+
     private let topics: LiveGuidanceDataTopics
     private let lossyPipe: AsyncStream<LiveGuidanceTransportPacket>
     private let lossyContinuation: AsyncStream<LiveGuidanceTransportPacket>.Continuation
@@ -87,6 +95,25 @@ actor LiveGuidanceRoomEventHub {
         if topic == topics.lossyGuidance {
             lossyContinuation.yield(packet)
         } else if topic == topics.reliableState {
+            reliableContinuation.yield(packet)
+        } else if topic.isEmpty {
+            routeCurrentUnscopedBackendPacket(packet)
+        }
+    }
+
+    /// The current Python publisher passes only the reliability flag; its SDK
+    /// emits an empty topic and Swift cannot observe that flag. Exact top-level
+    /// keys separate finite guidance from the reliable state snapshot without
+    /// interpreting either payload as navigation or acceptance.
+    private func routeCurrentUnscopedBackendPacket(
+        _ packet: LiveGuidanceTransportPacket
+    ) {
+        guard let object = try? JSONSerialization.jsonObject(with: packet.payload),
+              let dictionary = object as? [String: Any] else { return }
+        let fields = Set(dictionary.keys)
+        if fields == Self.guidanceFields {
+            lossyContinuation.yield(packet)
+        } else if fields == Self.reliableStateFields {
             reliableContinuation.yield(packet)
         }
     }

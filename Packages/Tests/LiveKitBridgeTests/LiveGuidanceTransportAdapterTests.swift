@@ -111,6 +111,30 @@ import Testing
     #expect(await reliable.next() == .init(payload: reliablePayload, participantIdentity: "agent"))
 }
 
+@Test func roomEventHubRoutesCurrentUnscopedBackendPacketsByClosedShape() async throws {
+    let hub = LiveGuidanceRoomEventHub(topics: .version1)
+    let streams = await hub.streams()
+    let guidance = Data(
+        #"{"sessionId":"session-1","sequence":1,"shot":"front","code":"READY","message":"撮影できます","confidence":0.9,"observedAt":1000,"expiresAt":2000}"#.utf8
+    )
+    let reliableState = Data(
+        #"{"type":"resync","sessionId":"session-1","sequence":2,"shot":"front","code":"READY","observedAt":1001}"#.utf8
+    )
+
+    await hub.receive(data: guidance, topic: "", participantIdentity: "agent")
+    await hub.receive(data: reliableState, topic: "", participantIdentity: "agent")
+    await hub.receive(
+        data: Data(#"{"sessionId":"session-1","sequence":3,"unknown":true}"#.utf8),
+        topic: "",
+        participantIdentity: "agent"
+    )
+
+    var lossy = streams.lossy.makeAsyncIterator()
+    var reliable = streams.reliable.makeAsyncIterator()
+    #expect(await lossy.next() == .init(payload: guidance, participantIdentity: "agent"))
+    #expect(await reliable.next() == .init(payload: reliableState, participantIdentity: "agent"))
+}
+
 @Test func captureForwarderKeepsOnePendingSampleAndDoesNotCreatePerFrameWork() async throws {
     let transport = GatedCaptureSampleTransport()
     let forwarder = LiveGuidanceCaptureSampleForwarder(

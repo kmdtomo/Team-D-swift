@@ -208,7 +208,7 @@
 
 ## 3. fixture／live設定とAPI契約
 
-- [ ] **T03-01 Swift domain型とstrict codecを確定する**
+- [x] **T03-01 Swift domain型とstrict codecを確定する**
   - 担当する責務: レーンAが、有限コード、時刻、座標、エラーをbackendと同じ意味で型安全に扱う。
   - 依存する先行タスク: T01-01, T02-01。
   - 実装対象: `Shot`, `GuidanceEvent`, `LocalQualityHint`, `ShotAssessment`, `ProviderError`, `MeasurementDraft`, `{x,y}`正規化`Point`、token request/response、各有限enum、参照元contract testから作るversion付きgolden JSON。
@@ -216,6 +216,16 @@
   - 自動テスト方法: 参照元`tests/test_guidance_contract.py`、`tests/test_livekit_token.py`、TypeScript schema fixtureと同じgolden payloadをround-tripし、未知キー/欠落/unknown enum/NaN/0...1外/sequence 0/期限境界のnegative table testをSwift Testingで行う。
   - 実機確認が必要か: 不要。
   - fixture / live: 両方。
+
+### T03-01 検証記録（2026-08-31）
+
+- Verification (2026-08-31):
+  - commit/build: `b3a410b feat: add strict domain wire contracts`; clean clone `/tmp/teamd-t03-clean.AhYk3n/repo`; Xcode 26.2 (17C52), Swift 6.2.3 compiler / Swift 6 language mode, iPhone 16 Pro Simulator (iOS 18.5, arm64)
+  - automated tests: from the clean clone, `swift test --package-path Packages --scratch-path /tmp/teamd-t03-clean.AhYk3n/swift-test` passed 18/18; `swift build --package-path Packages --scratch-path /tmp/teamd-t03-clean.AhYk3n/swift-build`; `./scripts/docs_smoke_fixture.sh` passed (UI 1/1, `TEST SUCCEEDED`, 3 known AppIntents warnings / 0 unexpected, status unchanged); package graph and T01 lints; `git diff --check` all passed
+  - fixture: seven synthetic v1 goldens structurally and value round-trip; exhaustive strict decoder negatives cover missing/unknown/wrong/null/container values, finite and boundary values, enum families, marker null/shape/scale, and expiry boundaries
+  - live: pinned source archive: `git -C /Users/komodatomo/Desktop/Team-D archive --format=tar --output=/tmp/teamd-t03-root.QAlrpE/source.tar 44065d41e8906d34e5d8e11d7cd4cc14b25d17f2`; extracted `/tmp/teamd-t03-root.QAlrpE/source`; from its root, `/Users/komodatomo/Desktop/Team-D/.venv/bin/python -m pytest -rs tests/test_guidance_contract.py tests/test_livekit_token.py` passed 17 with 1 skipped. The skipped browser-bundle secret scan reports `browser bundle is not built; run npm install and npm run build:web`; it is outside the Swift codec task and a Web build is prohibited in this repository. Implemented guidance/token contract tests passed; token expiry remains seconds and Guidance expiry milliseconds.
+  - device: not required
+  - limitations: TypeScript still permits `sequence=0`; Swift rejects it following the implemented Python wire and recorded compatibility decision. T03-02 intentionally owns the remaining endpoint envelopes.
 
 - [ ] **T03-02 version付きHTTP契約とclient境界を固定する**
   - 担当する責務: レーンA/Cが、既存Python FastAPIを共用するiOS向け契約を凍結し、backend実装の有無を可視化する。

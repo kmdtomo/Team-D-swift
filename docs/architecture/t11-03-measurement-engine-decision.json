@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 1,
+  "task": "T11-03",
+  "startRef": "3630266c3cd13b3cd322c998d7cd563cde50cdbd",
+  "status": "blocked",
+  "analysisContract": {
+    "knownMarkerSideCentimeters": 5.0,
+    "minimumMarkerSidePixels": 80.0,
+    "edgeMarginPixelsExclusive": 16.0,
+    "minimumMarkerSideRatio": 0.65,
+    "minimumGarmentMarkerGapPixels": 24.0,
+    "finiteFailureCount": 8
+  },
+  "thresholds": {
+    "minimumPhysicalCaptureCount": 30,
+    "markerSideMillimeters": 50.0,
+    "minimumValidDetectionRate": 0.95,
+    "maximumInvalidScaleAcceptances": 0,
+    "maximumRelativeScaleError": 0.01,
+    "maximumP95LatencyMilliseconds": 1000.0
+  },
+  "physicalCorpus": {
+    "corpusFingerprint": null,
+    "captureCount": 0,
+    "rightsClearedCount": 0,
+    "piiClearedCount": 0,
+    "rulerConfirmedMarkerSideMillimeters": null,
+    "annotationsComplete": false
+  },
+  "appleEvidence": null,
+  "openCVEvidence": null,
+  "openCVAdoptionImpact": {
+    "binarySizeDeltaBytes": null,
+    "cleanBuildTimeDeltaSeconds": null,
+    "artifactSource": null,
+    "artifactSHA256": null,
+    "licenseIdentifier": null,
+    "licenseReview": "pending",
+    "noticeReview": "pending",
+    "privacyReview": "pending",
+    "adoptionApproved": false
+  },
+  "decision": null,
+  "blockers": [
+    "physical-corpus-shortfall:30:0",
+    "rights-clearance-incomplete:30:0",
+    "pii-clearance-incomplete:30:0",
+    "ruler-evidence-missing:50.0",
+    "corpus-annotations-incomplete",
+    "corpus-fingerprint-missing"
+  ]
+}

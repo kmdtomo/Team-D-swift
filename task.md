@@ -64,7 +64,7 @@
 
 ## 依存関係の読み方
 
-- `[x]`は最終受け入れ済みを示すだけで、後続タスクの一律な着手条件ではない。`[ ]`の先行タスクがあっても、後続が必要とする契約、protocol、有限型、fixture、golden、mock/fake、画像期待値、または技術判断が安定していれば、競合しない実装とfocused testへ着手してよい。
+- `[x]`は、最新の明示運用により、実装と対応test codeをcommit済みの`code_ready_unverified`、または最終受け入れ済みを示す。個々の作業状態と残るgateは実装記録で区別し、`[x]`だけでbuild、test、live、実機、最終受け入れを済みと表現しない。`[ ]`の先行タスクがあっても、後続が必要とする契約、protocol、有限型、fixture、golden、mock/fake、画像期待値、または技術判断が安定していれば、競合しない実装とfocused testへ着手してよい。
 - `依存する先行タスク`は、特記がなければ**統合依存または受け入れ依存**を表す。着手を止める場合は、タスクIDではなく「未確定のwire意味」「必要protocol未提供」「同一fileのactive owner」「未承認の不可逆な技術判断」「未解決の機能要件」のように、欠けている成果物・決定と解除条件を記録する。
 - 実機、credential、共有backend、live環境の不在は、分離可能なfixture/mock実装を止めない。たとえばT05の実機証跡を待つ間もfake camera上のT06、未提供HTTP endpointを待つ間も凍結schema/golden上のT09/T12/T14、live mask生成を待つ間も既知mask/背景上のT15/T16を進められる。ただし該当する統合、live、実機、最終受け入れは未完了のままにする。
 - T11-02は既知cornerを持つfixture corpusで検出器・計測器の分離実装を始められるが、Apple標準framework採否の判断とT11の受け入れにはT11-01の物理corpusと実測証跡を必須とする。
@@ -78,7 +78,7 @@
 |---|---|---|
 | `planned` | 未着手 | `[ ]` |
 | `in_progress` | ownerが実装・focused testを進行中 | `[ ]` |
-| `code_ready_unverified` | 実装とテストコードをcommit済みだが、build/testは最終検証まで未実行 | `[ ]` |
+| `code_ready_unverified` | 実装とテストコードをcommit済みだが、build/testは最終検証まで未実行 | `[x]`（実装commit済み） |
 | `implementation_ready` | 最終検証で対象buildと自動テストが成功し、統合・live・実機証跡を待つ | `[ ]` |
 | `integration_ready` | 必要な他レーンとの接続確認まで完了し、残る受け入れgateを待つ | `[ ]` |
 | `accepted` | 全完了条件と必要なfixture/live/実機証跡が揃った | `[x]` |
@@ -89,7 +89,7 @@
 - 子workerは候補SHA、変更file、書いたが未実行のtest、残るgateを返して`code_ready_unverified`で終了する。`task.md`や共有project fileは更新せず、親AIは自分の固定担当範囲に含まれる場合だけcommit済み候補をbuildなしで統合する。`code_ready_unverified`をbuild済み・test済み・動作済みと表現してはならない。
 - Phase 2は、外部要因でblockedなものを除く全ローカル実装が`code_ready_unverified`になった後にだけ開始する。1つのcleanな統合worktree、1つの再利用可能なscratch/DerivedData root、1人のbuild検証・修正ownerを使い、他workerは同じworktreeを編集しない。
 - 検証ownerは統合diff全体をreviewし、package/app compile、focused/full test、contract/fixture test、app integration build、XCUITest、指定されたclean clone・性能・実機・live gateの順に検証する。compiler/linker error、必須test failure、必須受け入れ条件違反だけを`P0`として修正し、変更後にだけ再実行する。`P1`〜`P3`は小課題として記録するだけでPhase 2を延長しない。
-- 最終統合SHA、Xcode/Swift/依存version、commandと結果、fixture/live/device証跡、残る外部gateを記録してから、各taskを`implementation_ready`、`integration_ready`、または`accepted`へ進める。`[x]`は従来どおり全完了条件と必要証跡が揃った場合だけとする。記録後に再生成可能なscratch/DerivedData/test resultを削除する。
+- 最終統合SHA、Xcode/Swift/依存version、commandと結果、fixture/live/device証跡、残る外部gateを記録してから、各taskを`implementation_ready`、`integration_ready`、または`accepted`へ進める。実装commit時点でチェックしたtaskは、この証跡が揃うまで`code_ready_unverified`であり、`accepted`ではない。記録後に再生成可能なscratch/DerivedData/test resultを削除する。
 
 ## 1. 既存資産の棚卸しと移行境界
 
@@ -413,7 +413,7 @@
 
 ## 7. 明るさ・ブレ・安定性の端末内判定
 
-- [ ] **T07-01 Apple標準frameworkでローカル品質primitiveを作る**
+- [x] **T07-01 Apple標準frameworkでローカル品質primitiveを作る**
   - 担当する責務: レーンB/Dが、AIに依存せず明るさ・ブレ・動きを数値化する。
   - 依存する先行タスク: T05-01, T06-01。
   - 実装対象: Core Image/AccelerateによるROI縮小・grayscale、平均輝度、Laplacian分散、正規化frame差分、閾値設定。
@@ -421,8 +421,9 @@
   - 自動テスト方法: dark/bright/blur/detail/motion/stableの数値fixtureと境界値をSwift Testingで判定し、同一入力が決定的な結果になることを検証する。
   - 実機確認が必要か: 必須。照明変更、手ブレ、静止で助言が期待方向へ変化することを確認する。
   - fixture / live: 両方。
+  - 実装記録 (2026-09-01): `cabf6f0 feat: add local quality analyzer`をmainへ統合済み。最新の明示運用により実装commit時点でチェックし、作業状態は`code_ready_unverified`。build/testと実機証跡は最終検証に残す。
 
-- [ ] **T07-02 4Hz scheduler、backpressure、性能計測を作る**
+- [x] **T07-02 4Hz scheduler、backpressure、性能計測を作る**
   - 担当する責務: レーンBが、frameを溜めず最新状態を優先しUIを阻害しない実行制御を持つ。
   - 依存する先行タスク: T07-01。
   - 実装対象: actor/AsyncStreamのcapacity 1、最大同時解析1、4Hz sampling、cancellation、signpost/metric収集、過負荷時`ANALYZER_UNAVAILABLE`。
@@ -430,6 +431,7 @@
   - 自動テスト方法: test clockと遅いanalyzerでcoalescing、同時数、cancel、p95集計を検証し、memory growth testを行う。
   - 実機確認が必要か: 必須。基準実機のsignpost結果を保存する。
   - fixture / live: 両方。
+  - 実装記録 (2026-09-01): `283299c feat: schedule local quality analysis`をmainへ統合済み。最新の明示運用により実装commit時点でチェックし、作業状態は`code_ready_unverified`。build/test、基準実機の4Hz・UI p95・memory/signpost証跡は最終検証に残す。
 
 ## 8. LiveKit Swift SDKとリアルタイムAgent接続
 
@@ -560,7 +562,7 @@
   - 実機確認が必要か: 必須。共有backendの正常/timeoutを確認する。
   - fixture / live: 両方。
 
-- [ ] **T12-03 4端点から着丈・身幅を0.1cm単位で計算する**
+- [x] **T12-03 4端点から着丈・身幅を0.1cm単位で計算する**
   - 担当する責務: レーンDが、AIの提案を補正面へ写像し、物理量を決定的に算出する。
   - 依存する先行タスク: T12-01, T12-02。
   - 実装対象: normalized point mapping、着丈=背面襟中央付け根→裾中央、身幅=左右脇下間、Euclidean distance/pxPerCm、丸め規則。
@@ -568,6 +570,7 @@
   - 自動テスト方法: 既知geometry、向き/解像度違い、rounding境界、NaN/Infinity/zero scaleのtable test。
   - 実機確認が必要か: 不要（最終精度はT18-03で必須）。
   - fixture / live: fixture。
+  - 実装記録 (2026-09-01): `071a0c8 feat: calculate garment measurements from endpoints`をmainへ統合済み。最新の明示運用により実装commit時点でチェックし、作業状態は`code_ready_unverified`。統合後のbuild/testとT18-03の最終精度証跡は最終検証に残す。
 
 ## 13. 測定端点の編集・承認・手入力
 

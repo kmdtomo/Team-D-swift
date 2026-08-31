@@ -76,5 +76,17 @@ let package = Package(
             name: "CompositionKitTests",
             dependencies: ["CompositionKit", "DomainKit"]
         ),
+        .testTarget(
+            name: "CaptureKitTests",
+            dependencies: ["CaptureKit", "DomainKit"]
+        ),
+        .testTarget(
+            name: "LiveKitBridgeTests",
+            dependencies: ["LiveKitBridge", "ContractKit", "DomainKit"]
+        ),
+        .testTarget(
+            name: "MeasurementKitTests",
+            dependencies: ["MeasurementKit", "DomainKit"]
+        ),
     ]
 )

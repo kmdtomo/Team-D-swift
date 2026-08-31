@@ -36,12 +36,14 @@ public enum CaptureRecoveryAction: Equatable, Sendable {
 /// escape through this boundary.
 public struct CaptureRecoveryPresentation: Equatable, Sendable {
     public let state: CaptureRecoveryState
-    public let action: CaptureRecoveryAction?
+    /// The UI must render every offered action. In particular, a denied camera
+    /// permission has both Settings and the native photo-selection fallback.
+    public let actions: [CaptureRecoveryAction]
     public let instruction: String
 
-    public init(state: CaptureRecoveryState, action: CaptureRecoveryAction?, instruction: String) {
+    public init(state: CaptureRecoveryState, actions: [CaptureRecoveryAction], instruction: String) {
         self.state = state
-        self.action = action
+        self.actions = actions
         self.instruction = instruction
     }
 }
@@ -50,29 +52,29 @@ public enum CaptureRecoveryCopy {
     public static func presentation(for state: CaptureRecoveryState, shot: Shot) -> CaptureRecoveryPresentation {
         switch state {
         case .cameraReady:
-            .init(state: state, action: nil, instruction: "写真を撮影してください")
+            .init(state: state, actions: [], instruction: "写真を撮影してください")
         case .permission(.notDetermined), .permission(.requesting):
-            .init(state: state, action: .requestCameraPermission, instruction: "カメラの使用を許可してください")
+            .init(state: state, actions: [.requestCameraPermission], instruction: "カメラの使用を許可してください")
         case .permission(.denied):
-            .init(state: state, action: .openSettings, instruction: "カメラを使うには設定で許可するか、写真から選んでください")
+            .init(state: state, actions: [.openSettings, .selectPhoto(shot)], instruction: "カメラを使うには設定で許可するか、写真から選んでください")
         case .permission(.restricted):
-            .init(state: state, action: .selectPhoto(shot), instruction: "カメラを使えません。写真から選んでください")
+            .init(state: state, actions: [.selectPhoto(shot)], instruction: "カメラを使えません。写真から選んでください")
         case .interrupted:
-            .init(state: state, action: .retryCamera, instruction: "カメラが中断されました。再開してください")
+            .init(state: state, actions: [.retryCamera], instruction: "カメラが中断されました。再開してください")
         case .runtimeError:
-            .init(state: state, action: .retryCamera, instruction: "カメラを再開できません。もう一度お試しください")
+            .init(state: state, actions: [.retryCamera], instruction: "カメラを再開できません。もう一度お試しください")
         case .inBackground:
-            .init(state: state, action: .resumeCamera, instruction: "アプリに戻ったら撮影を再開できます")
+            .init(state: state, actions: [.resumeCamera], instruction: "アプリに戻ったら撮影を再開できます")
         case .resuming:
-            .init(state: state, action: nil, instruction: "カメラを再開しています")
+            .init(state: state, actions: [], instruction: "カメラを再開しています")
         case .importing:
-            .init(state: state, action: nil, instruction: "写真を確認しています")
+            .init(state: state, actions: [], instruction: "写真を確認しています")
         case .importCancelled:
-            .init(state: state, action: .selectPhoto(shot), instruction: "写真の選択を取り消しました。もう一度選べます")
+            .init(state: state, actions: [.selectPhoto(shot)], instruction: "写真の選択を取り消しました。もう一度選べます")
         case .importFailed:
-            .init(state: state, action: .selectPhoto(shot), instruction: "写真を読み込めませんでした。もう一度選んでください")
+            .init(state: state, actions: [.selectPhoto(shot)], instruction: "写真を読み込めませんでした。もう一度選んでください")
         case .staleSession:
-            .init(state: state, action: nil, instruction: "この撮影は終了しました。新しい撮影を開始してください")
+            .init(state: state, actions: [], instruction: "この撮影は終了しました。新しい撮影を開始してください")
         }
     }
 }

@@ -21,13 +21,13 @@ final class CaptureRecoveryControllerTests: XCTestCase {
         let denied = makeController(authorization: .denied)
         await denied.refreshPermission()
         let deniedPresentation = await denied.presentation(for: .front)
-        XCTAssertEqual(deniedPresentation.action, .openSettings)
+        XCTAssertEqual(deniedPresentation.actions, [.openSettings, .selectPhoto(.front)])
         XCTAssertEqual(deniedPresentation.instruction, "カメラを使うには設定で許可するか、写真から選んでください")
 
         let restricted = makeController(authorization: .restricted)
         await restricted.refreshPermission()
         let restrictedPresentation = await restricted.presentation(for: .tag)
-        XCTAssertEqual(restrictedPresentation.action, .selectPhoto(.tag))
+        XCTAssertEqual(restrictedPresentation.actions, [.selectPhoto(.tag)])
     }
 
     func testInterruptionRuntimeErrorAndForegroundRetainAcceptedSlots() async {
@@ -43,7 +43,7 @@ final class CaptureRecoveryControllerTests: XCTestCase {
         let interruptedPresentation = await controller.presentation(for: .tag)
         let interruptedSlots = await controller.preservedAcceptedSlots()
         XCTAssertEqual(interruptedState, .interrupted)
-        XCTAssertEqual(interruptedPresentation.action, .retryCamera)
+        XCTAssertEqual(interruptedPresentation.actions, [.retryCamera])
         XCTAssertEqual(interruptedSlots, [.front, .back])
 
         await controller.receive(.interruptionEnded)
@@ -97,7 +97,7 @@ final class CaptureRecoveryControllerTests: XCTestCase {
         let cancelledState = await controller.state
         let cancelledPresentation = await controller.presentation(for: .back)
         XCTAssertEqual(cancelledState, .importCancelled(.back))
-        XCTAssertEqual(cancelledPresentation.action, .selectPhoto(.back))
+        XCTAssertEqual(cancelledPresentation.actions, [.selectPhoto(.back)])
 
         do {
             try await controller.importPhoto(ImmediateImporter(result: .failure(CocoaError(.fileReadCorruptFile))), for: .back)
@@ -107,7 +107,7 @@ final class CaptureRecoveryControllerTests: XCTestCase {
         let failedPresentation = await controller.presentation(for: .back)
         let slots = await controller.preservedAcceptedSlots()
         XCTAssertEqual(failedState, .importFailed(.back))
-        XCTAssertEqual(failedPresentation.action, .selectPhoto(.back))
+        XCTAssertEqual(failedPresentation.actions, [.selectPhoto(.back)])
         XCTAssertEqual(slots, [.front])
     }
 

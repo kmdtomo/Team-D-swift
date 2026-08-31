@@ -1,0 +1,108 @@
+{
+  "schemaVersion": 1,
+  "source": {
+    "repository": "https://github.com/neko-jpg/Team-D",
+    "sha": "44065d41e8906d34e5d8e11d7cd4cc14b25d17f2",
+    "access": "read-only git archive",
+    "pythonMinimum": "3.11"
+  },
+  "productionRuntime": {
+    "requirementsFile": "requirements-backend.txt",
+    "pins": {
+      "fastapi": "0.116.1",
+      "livekit": "1.1.15",
+      "livekit-agents": "1.7.1",
+      "livekit-api": "1.2.1",
+      "uvicorn": "0.35.0"
+    }
+  },
+  "smokeRuntime": {
+    "requirementsFile": "requirements-livekit-smoke.txt",
+    "scope": "smoke-only; never a production runtime pin",
+    "pins": {
+      "livekit-agents": "1.3.12",
+      "httpx": "0.28.1",
+      "python-dotenv": "1.2.3"
+    }
+  },
+  "implemented": [
+    {
+      "surface": "GET /api/health",
+      "sourcePaths": ["backend/app.py"],
+      "evidence": "create_app registers GET /api/health and returns only status=ok"
+    },
+    {
+      "surface": "POST /api/livekit-token",
+      "sourcePaths": ["backend/app.py", "backend/livekit_token.py"],
+      "evidence": "router is included; token grants publish camera and data, and deny subscribe"
+    },
+    {
+      "surface": "LiveKit camera-only transport core",
+      "sourcePaths": ["backend/live_agent.py"],
+      "evidence": "explicit SUBSCRIBE_NONE plus video/camera filtering, VideoStream capacity=1, and LatestFrameProcessor max_concurrency=1"
+    },
+    {
+      "surface": "Guidance contract and state machine",
+      "sourcePaths": ["backend/guidance_state_machine.py", "backend/providers/vision_guidance.py"],
+      "evidence": "finite provider decision; lossy GuidanceEvent and reliable shot/resync state carry positive session-scoped sequence"
+    }
+  ],
+  "blockers": [
+    {
+      "surface": "shared HTTPS FastAPI staging integration",
+      "sourcePaths": ["package.json", "README.md", "backend/app.py"],
+      "owner": "neko-jpg/Team-D shared backend owner",
+      "contract": "deploy the audited FastAPI health/token surface behind a non-secret HTTPS base URL and make protected staging credentials available outside this repository",
+      "neededBy": "T08-02 protected live smoke",
+      "releaseCondition": "health and least-privilege token claims pass against protected staging; Room join and camera-only subscription are observed without fixture fallback"
+    },
+    {
+      "surface": "real AI inference to LiveKit Guidance push",
+      "sourcePaths": ["backend/live_agent.py", "backend/guidance_state_machine.py", "backend/providers/vision_guidance.py"],
+      "owner": "neko-jpg/Team-D shared backend owner",
+      "contract": "adapt a VisionGuidanceProvider result through GuidanceStateMachine and publish GuidanceEvent as lossy data; publish shot-change/resync as reliable data packet or RPC",
+      "neededBy": "T08-02 live guidance acceptance",
+      "releaseCondition": "a protected Room smoke observes finite, session/shot/sequence/expiry-valid pushed events; no HTTP polling or free-text navigation is introduced"
+    },
+    {
+      "surface": "1-2 fps Agent sampling policy",
+      "sourcePaths": ["backend/live_agent.py"],
+      "owner": "neko-jpg/Team-D shared backend owner",
+      "contract": "sample the latest camera frame at an explicit 1-2 fps bound while retaining capacity=1 and one inference in flight",
+      "neededBy": "T08-02 and T18-02 live performance evidence",
+      "releaseCondition": "source test and protected metrics demonstrate a 1-2 fps selection rate, pending capacity <= 1, and inference concurrency <= 1"
+    },
+    {
+      "surface": "POST /api/analyze-shot",
+      "sourcePaths": ["backend/app.py"],
+      "owner": "neko-jpg/Team-D shared backend owner",
+      "contract": "frozen v1 multipart requestedShot plus image to strict ShotAssessment, ProviderError envelope, and 20 second timeout",
+      "neededBy": "T09-02 live acceptance",
+      "releaseCondition": "endpoint is deployed and T09-02's protected contract smoke covers success, invalid input, timeout, and provider failure"
+    },
+    {
+      "surface": "POST /api/suggest-measurement-points",
+      "sourcePaths": ["backend/app.py"],
+      "owner": "neko-jpg/Team-D shared backend owner",
+      "contract": "frozen v1 corrected measurement multipart image to exactly four NormalizedPoint values, ProviderError envelope, and 20 second timeout",
+      "neededBy": "T12-02 live acceptance",
+      "releaseCondition": "endpoint is deployed and T12-02's protected contract smoke covers success, invalid input, timeout, and provider failure"
+    },
+    {
+      "surface": "POST /api/generate-background",
+      "sourcePaths": ["backend/app.py"],
+      "owner": "neko-jpg/Team-D shared backend owner",
+      "contract": "frozen v1 text-only allowed style request to image/png background, ProviderError envelope, and 60 second timeout; no image, mask, tag, or measurement input",
+      "neededBy": "T14-02 live acceptance",
+      "releaseCondition": "endpoint is deployed and T14-02's protected contract smoke proves image fields are rejected and failure retains session progress"
+    },
+    {
+      "surface": "POST /api/remove-background",
+      "sourcePaths": ["backend/app.py"],
+      "owner": "neko-jpg/Team-D shared backend owner",
+      "contract": "frozen v1 front-only multipart image to same-size mask-only image/png, ProviderError envelope, and 35 second timeout",
+      "neededBy": "T14-01 live acceptance",
+      "releaseCondition": "endpoint is deployed and T14-01's protected contract smoke proves non-front bytes are rejected and invalid masks are not accepted"
+    }
+  ]
+}

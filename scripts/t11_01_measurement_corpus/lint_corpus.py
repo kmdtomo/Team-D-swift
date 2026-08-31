@@ -6,6 +6,7 @@ import argparse
 import hashlib
 import json
 import tempfile
+import math
 from pathlib import Path
 
 import generate_synthetic
@@ -35,6 +36,9 @@ def validate(manifest):
         if not isinstance(case_id, str) or case_id in ids:
             fail("case IDs must be unique strings")
         ids.add(case_id)
+        required = {"id", "file", "sha256", "expectedCorners", "expectedScalePxPerCm", "expectedMask", "expectedMeasurementsCm", "expectedFailure", "failurePair"}
+        if required - set(case):
+            fail(f"{case_id}: missing required case fields")
         if not isinstance(case.get("sha256"), str) or len(case["sha256"]) != 64:
             fail(f"{case_id}: SHA-256 is required")
         failure = case.get("expectedFailure")
@@ -48,10 +52,29 @@ def validate(manifest):
                 fail(f"{case_id}: corners must be in image bounds")
             if not (corners[0][0] <= corners[1][0] and corners[0][1] <= corners[3][1]):
                 fail(f"{case_id}: corners must use top-left, top-right, bottom-right, bottom-left order")
+            if case.get("markerCorners") and case["markerCorners"] != corners:
+                fail(f"{case_id}: expected corners must equal rendered marker corners")
         if case.get("expectedScalePxPerCm") is not None and case["expectedScalePxPerCm"] <= 0:
             fail(f"{case_id}: scale must be positive")
-        if not isinstance(case.get("expectedMask"), str) or not isinstance(case.get("expectedMeasurementsCm"), dict):
+        measurement = case.get("expectedMeasurementsCm")
+        if not isinstance(case.get("expectedMask"), str) or not isinstance(measurement, dict) or set(measurement) != {"length", "width"} or not all(isinstance(value, (int, float)) and value > 0 for value in measurement.values()):
             fail(f"{case_id}: mask and real-world measurement expectations are required")
+        boundary = case.get("boundary", {})
+        if "sideRatio" in boundary:
+            if not corners or not math.isclose(min(math.dist(corners[0], corners[1]), math.dist(corners[1], corners[2])) / max(math.dist(corners[0], corners[1]), math.dist(corners[1], corners[2])), boundary["sideRatio"], abs_tol=0.001):
+                fail(f"{case_id}: boundary ratio does not match geometry")
+            if boundary.get("measurementFailureMapping") != "unresolved" and boundary["sideRatio"] < 0.65:
+                fail(f"{case_id}: below-ratio mapping must remain unresolved")
+        if "edgeMarginPx" in boundary and boundary["edgeMarginPx"] <= 16:
+            if case.get("scaleAccepted") is not False or boundary.get("measurementFailureMapping") != "unresolved":
+                fail(f"{case_id}: edge rejection must not invent a MeasurementFailure mapping")
+        if "garmentMarkerGapPx" in boundary:
+            if not corners or min(x for x, _ in corners) - 550 != boundary["garmentMarkerGapPx"]:
+                fail(f"{case_id}: garment-marker gap does not match geometry")
+        endpoints = case.get("inputEndpoints")
+        if case_id == "endpoints-invalid":
+            if not isinstance(endpoints, dict) or not any(value < 0 or value > 1 for point in endpoints.values() for value in point):
+                fail("endpoints-invalid: requires an observable out-of-range endpoint annotation")
         for code, polarity in case.get("failurePair", {}).items():
             if code not in FAILURES or not isinstance(polarity, bool):
                 fail(f"{case_id}: invalid failure pair")

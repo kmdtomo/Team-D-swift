@@ -19,9 +19,10 @@ Use the baseline iPhone standard Camera app; no Team-D app, backend, or API is
 needed. Put the marker in the lower-right on the same plane as the garment and
 at least 30mm from it. Capture the whole garment and marker from overhead.
 
-Record at least 30 photos, covering every matrix cell below at least once and
-the `valid` cell at least six times. Spread distance, light tilt, and lighting;
-do not turn a failed condition into a valid scale result.
+Record at least 30 photos. The rows below are an overlapping coverage matrix,
+not additive quotas: one photo may satisfy one valid distance/light row and one
+perspective or quality row. Spread distance, light tilt, and lighting; do not
+turn a failed condition into a valid scale result.
 
 | Condition | Minimum |
 | --- | ---: |

@@ -13,8 +13,13 @@ python3 scripts/t11_01_measurement_corpus/lint_corpus.py --render-dir /tmp/teamd
 ```
 
 The generator is standard-library-only.  The manifest pins each generated
-SHA-256, expected marker corners, scale, garment mask expectation, real-world
-measurement expectation, and expected finite failure.  The physical corpus is
+SHA-256, rendered marker corners, projected scale, garment mask expectation,
+real-world measurement expectation, and expected finite failure. Perspective
+cases record **rectified** px/cm: the scale after the four annotated corners
+are perspective-corrected, not an axis-aligned source-pixel measurement.
+Edge-margin and aspect-ratio rejections record `scaleAccepted:false` and an
+`unresolved` MeasurementFailure mapping; requirements define no finite failure
+code for those geometric rejections. The physical corpus is
 not represented by substitute fixture images: collect it with the runbook and
 record only non-identifying conditions in `physical-corpus-log.csv`.
 

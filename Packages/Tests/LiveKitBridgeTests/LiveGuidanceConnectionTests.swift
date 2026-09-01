@@ -83,6 +83,87 @@ import Testing
     #expect(snapshot.guidanceDeliveryLatencyP95Milliseconds == 100)
 }
 
+@Test func currentTokenRoomNameIsTheOnlyAcceptedBackendGuidanceSessionAlias() async throws {
+    let transport = FakeRoomTransport()
+    let receiver = OutputRecorder()
+    let sut = try connection(
+        tokenProvider: RecordingTokenProvider(
+            response: try tokenResponse(roomName: "listing-photo-session-session-123")
+        ),
+        transport: transport,
+        receiver: receiver
+    )
+    await sut.join()
+    #expect(await waitUntil { await sut.snapshot().phase == .connected })
+
+    await transport.yieldLossy(
+        try guidance(sessionID: "listing-photo-session-session-123", sequence: 1),
+        roomIndex: 0
+    )
+    await transport.yieldLossy(
+        try guidance(sessionID: "listing-photo-session-someone-else", sequence: 2),
+        roomIndex: 0
+    )
+
+    #expect(await waitUntil {
+        let snapshot = await sut.snapshot()
+        return snapshot.acceptedGuidanceCount == 1 && snapshot.rejectedGuidanceCount == 1
+    })
+    let snapshot = await sut.snapshot()
+    #expect(snapshot.lastAcceptedSequence == 1)
+    #expect(snapshot.lastGuidanceRejection == .filtered(.sessionMismatch))
+    let outputs = await receiver.outputs
+    let delivery = try #require(outputs.compactMap { output -> LiveGuidanceDelivery? in
+        guard case .guidance(let delivery) = output else { return nil }
+        return delivery
+    }.first)
+    #expect(delivery.sessionID == "session-123")
+}
+
+@Test func reconnectReplacesTheTokenRoomGuidanceSessionAlias() async throws {
+    let tokenProvider = SequencedTokenProvider(
+        responses: [
+            try tokenResponse(roomName: "listing-session-first"),
+            try tokenResponse(roomName: "listing-session-second"),
+        ]
+    )
+    let transport = FakeRoomTransport()
+    let receiver = OutputRecorder()
+    let sut = try connection(
+        tokenProvider: tokenProvider,
+        transport: transport,
+        receiver: receiver
+    )
+
+    await sut.join()
+    #expect(await waitUntil { await sut.snapshot().phase == .connected })
+    await transport.yieldLossy(
+        try guidance(sessionID: "listing-session-first", sequence: 1),
+        roomIndex: 0
+    )
+    #expect(await waitUntil { await sut.snapshot().lastAcceptedSequence == 1 })
+
+    await sut.leave()
+    await sut.join()
+    #expect(await waitUntil { await transport.joinRecords.count == 2 })
+    #expect(await waitUntil { await sut.snapshot().phase == .connected })
+    await transport.yieldLossy(
+        try guidance(sessionID: "listing-session-first", sequence: 2),
+        roomIndex: 1
+    )
+    await transport.yieldLossy(
+        try guidance(sessionID: "listing-session-second", sequence: 2),
+        roomIndex: 1
+    )
+
+    #expect(await waitUntil {
+        let snapshot = await sut.snapshot()
+        return snapshot.acceptedGuidanceCount == 2 && snapshot.rejectedGuidanceCount == 1
+    })
+    #expect(await receiver.guidanceSequences == [1, 2])
+    #expect(await sut.snapshot().lastGuidanceRejection == .filtered(.sessionMismatch))
+}
+
 @Test func reliablePacketStaysOpaqueAndCannotMutateGuidanceOrWorkflowState() async throws {
     let tokenProvider = RecordingTokenProvider(response: try tokenResponse())
     let transport = FakeRoomTransport()
@@ -286,11 +367,13 @@ private func connection(
     )
 }
 
-private func tokenResponse() throws -> LiveKitTokenResponse {
+private func tokenResponse(
+    roomName: String = "listing-session-123"
+) throws -> LiveKitTokenResponse {
     try .init(
         token: "fixture-bearer",
         participantIdentity: "ios-session-123",
-        roomName: "listing-session-123",
+        roomName: roomName,
         expiresAt: 90,
         livekitUrl: "wss://livekit.example.invalid"
     )
@@ -352,6 +435,17 @@ private actor RecordingTokenProvider: LiveGuidanceTokenProviding {
     func fetchToken(for request: LiveKitTokenRequest) async throws -> LiveKitTokenResponse {
         sessionIDs.append(request.sessionId)
         return response
+    }
+}
+
+private actor SequencedTokenProvider: LiveGuidanceTokenProviding {
+    private var responses: [LiveKitTokenResponse]
+
+    init(responses: [LiveKitTokenResponse]) { self.responses = responses }
+
+    func fetchToken(for request: LiveKitTokenRequest) async throws -> LiveKitTokenResponse {
+        _ = request
+        return responses.removeFirst()
     }
 }
 

@@ -11,6 +11,9 @@ unrelated endpoints.
 - Inspected commit: `a25a8542664b4bd3bfe3ff00171ea56cd373966c`
 - Retrieved: `2026-08-31T16:48:22Z` (`2026-09-01T01:48:22+09:00`)
 - Access: read-only shallow clone; no source-repository mutation
+- Session-identity reinspection: the same remote `main` commit was retrieved
+  read-only at `2026-09-01T00:30:29Z`
+  (`2026-09-01T09:30:29+09:00`); no backend source was changed
 
 ## T08-02 guidance transport
 
@@ -26,6 +29,16 @@ top-level shape of `GuidanceEvent` to the lossy stream and the exact closed
 shape of `GuidanceStateEvent` to the opaque reliable stream. Unknown shapes are
 dropped. Reliable bytes remain non-navigating and non-accepting until T08-03
 owns their state schema and synchronization behavior.
+
+The token route derives `roomName` as
+`listing-photo-session-<app sessionId>`, while the current Agent constructs its
+guidance state machine with that Room name as `GuidanceEvent.sessionId`. The
+frozen app contract still owns the original app session ID. Swift therefore
+normalizes only an event session that exactly equals the active token
+response's `roomName` back to the current app session before applying the
+existing session, shot, sequence, and expiry filter. It does not accept an
+arbitrary prefixed session, and a previous token's Room name is invalidated on
+leave, failure, and reconnect.
 
 ## T09-01 shot assessment
 

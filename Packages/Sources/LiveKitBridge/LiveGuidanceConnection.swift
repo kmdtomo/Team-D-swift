@@ -284,6 +284,7 @@ public actor LiveGuidanceConnection {
     private var generation: UInt64 = 0
     private var requestID: UUID?
     private var room: UUID?
+    private var activeGuidanceSessionAlias: String?
     private var joinTask: Task<Void, Never>?
     private var publishTask: Task<Void, Never>?
     private var packetTasks: [Task<Void, Never>] = []
@@ -346,6 +347,7 @@ public actor LiveGuidanceConnection {
         let kind: LiveGuidanceJoinKind = hasConnected ? .reconnect : .initial
         requestID = operationRequestID
         room = nil
+        activeGuidanceSessionAlias = nil
         publishState = .notRequested
         phase = .requestingToken(kind, operationRequestID)
         filter.transitionConnection(to: kind == .initial ? .connecting : .reconnecting)
@@ -378,6 +380,7 @@ public actor LiveGuidanceConnection {
         packetTasks.removeAll()
         let joinedRoom = room
         room = nil
+        activeGuidanceSessionAlias = nil
         if let joinedRoom { await transport.leave(joinedRoom) }
         if generation == leaveGeneration {
             phase = .disconnected
@@ -570,6 +573,11 @@ public actor LiveGuidanceConnection {
             return
         }
         room = joined.handle
+        // The inspected backend derives GuidanceEvent.sessionId from its
+        // token-authorized Room name. Bind that compatibility alias only to
+        // this successful join; arbitrary or previous Room names still fail
+        // the app-session filter.
+        activeGuidanceSessionAlias = token.roomName
         joinTask = nil
         phase = .connected
         filter.transitionConnection(to: .connected)
@@ -653,7 +661,8 @@ public actor LiveGuidanceConnection {
                         sessionID: sessionID, room: joinedRoom) else { return }
         let event: GuidanceEvent
         do {
-            event = try decoder.decode(GuidanceEvent.self, from: packet.payload)
+            let decoded = try decoder.decode(GuidanceEvent.self, from: packet.payload)
+            event = try normalizeCurrentBackendSessionAlias(in: decoded)
         } catch {
             reject(.invalidGuidanceJSON)
             return
@@ -775,6 +784,7 @@ public actor LiveGuidanceConnection {
         generation = nextGeneration()
         requestID = nil
         room = nil
+        activeGuidanceSessionAlias = nil
         filter.transitionConnection(to: .disconnected)
         publishState = .stopped
         phase = .failed(failure)
@@ -971,6 +981,23 @@ public actor LiveGuidanceConnection {
     private func reject(_ rejection: LiveGuidancePacketRejection) {
         rejectedCount &+= 1
         lastRejection = rejection
+    }
+
+    private func normalizeCurrentBackendSessionAlias(
+        in event: GuidanceEvent
+    ) throws -> GuidanceEvent {
+        guard event.sessionId != filter.currentSessionId,
+              event.sessionId == activeGuidanceSessionAlias else { return event }
+        return try GuidanceEvent(
+            sessionId: filter.currentSessionId,
+            sequence: event.sequence,
+            shot: event.shot,
+            code: event.code,
+            message: event.message,
+            confidence: event.confidence,
+            observedAt: event.observedAt,
+            expiresAt: event.expiresAt
+        )
     }
 
     private func finishJoin(
